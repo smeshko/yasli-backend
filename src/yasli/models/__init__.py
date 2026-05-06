@@ -1,6 +1,7 @@
 """ORM model registry. The `Base` declarative root lives here so future
-changes (s05 onwards) can attach their tables and Alembic's `target_metadata`
-keeps pointing at one place."""
+changes can attach their tables and Alembic's `target_metadata` keeps
+pointing at one place. Importing this package registers every table on
+`Base.metadata`, which is what the Alembic env relies on."""
 
 from __future__ import annotations
 
@@ -11,4 +12,16 @@ class Base(DeclarativeBase):
     pass
 
 
-__all__ = ["Base"]
+from yasli.models.types import KIND_VALUES, Kind  # noqa: E402
+from yasli.models.institution import Institution  # noqa: E402
+from yasli.models.street import Street  # noqa: E402
+from yasli.models.address_entry import AddressEntry  # noqa: E402
+
+__all__ = [
+    "Base",
+    "Kind",
+    "KIND_VALUES",
+    "Institution",
+    "Street",
+    "AddressEntry",
+]

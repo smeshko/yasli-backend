@@ -1,0 +1,186 @@
+"""Database constraint tests against a real Postgres at head.
+
+Verifies that the schema enforces what the spec promises: the `kind` CHECK,
+the `(external_id, kind)` UNIQUE, and the cascading delete from
+institutions to address_entries. Skips when no Postgres is reachable.
+"""
+
+from __future__ import annotations
+
+import os
+import subprocess
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+import pytest
+from sqlalchemy import create_engine, text
+from sqlalchemy.exc import IntegrityError
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+def _candidate_url() -> str | None:
+    explicit = os.environ.get("YASLI_TEST_DATABASE_URL")
+    if explicit:
+        return explicit
+    fallback = os.environ.get("DATABASE_URL")
+    if fallback and ("postgres" in fallback):
+        return fallback
+    return None
+
+
+def _is_reachable(url: str) -> bool:
+    try:
+        engine = create_engine(url, future=True)
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        engine.dispose()
+        return True
+    except Exception:
+        return False
+
+
+_url = _candidate_url()
+pytestmark = pytest.mark.skipif(
+    _url is None or not _is_reachable(_url),
+    reason=(
+        "Postgres unavailable — set YASLI_TEST_DATABASE_URL to a reachable "
+        "Postgres URL to run constraint tests."
+    ),
+)
+
+
+def _alembic(args: list[str], url: str) -> subprocess.CompletedProcess[str]:
+    env = os.environ.copy()
+    env["DATABASE_URL"] = url
+    src = str(REPO_ROOT / "src")
+    env["PYTHONPATH"] = src + os.pathsep + env.get("PYTHONPATH", "")
+    return subprocess.run(
+        [sys.executable, "-m", "alembic", *args],
+        cwd=REPO_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+
+
+@pytest.fixture
+def head_db() -> str:
+    assert _url is not None
+    down = _alembic(["downgrade", "base"], _url)
+    assert down.returncode == 0, down.stderr
+    up = _alembic(["upgrade", "head"], _url)
+    assert up.returncode == 0, up.stderr
+    return _url
+
+
+def _insert_institution(conn, *, external_id: str, kind: str, name: str = "X") -> int:
+    row = conn.execute(
+        text(
+            "INSERT INTO institutions (external_id, name, kind, source_url, last_seen_at) "
+            "VALUES (:external_id, :name, :kind, :source_url, :last_seen_at) "
+            "RETURNING id"
+        ),
+        {
+            "external_id": external_id,
+            "name": name,
+            "kind": kind,
+            "source_url": "https://example.test/x",
+            "last_seen_at": datetime.now(tz=timezone.utc),
+        },
+    ).scalar_one()
+    return int(row)
+
+
+def _insert_street(conn, *, raw_name: str) -> int:
+    row = conn.execute(
+        text(
+            "INSERT INTO streets (city, raw_name, street_part, type_marker, search_norm) "
+            "VALUES (:city, :raw_name, :street_part, :type_marker, :search_norm) "
+            "RETURNING id"
+        ),
+        {
+            "city": "ГР.ВАРНА",
+            "raw_name": raw_name,
+            "street_part": raw_name,
+            "type_marker": None,
+            "search_norm": raw_name.lower(),
+        },
+    ).scalar_one()
+    return int(row)
+
+
+def test_kind_check_rejects_old_source_value(head_db: str) -> None:
+    engine = create_engine(head_db, future=True)
+    try:
+        with engine.begin() as conn, pytest.raises(IntegrityError):
+            _insert_institution(conn, external_id="100", kind="infant")
+    finally:
+        engine.dispose()
+
+
+def test_kind_check_accepts_v1_values(head_db: str) -> None:
+    engine = create_engine(head_db, future=True)
+    try:
+        with engine.begin() as conn:
+            for k in ("nursery", "kindergarten", "preschool"):
+                _insert_institution(conn, external_id=f"v-{k}", kind=k)
+    finally:
+        engine.dispose()
+
+
+def test_external_id_kind_unique(head_db: str) -> None:
+    engine = create_engine(head_db, future=True)
+    try:
+        with engine.begin() as conn:
+            _insert_institution(conn, external_id="42", kind="nursery")
+
+        with engine.begin() as conn, pytest.raises(IntegrityError):
+            _insert_institution(conn, external_id="42", kind="nursery")
+    finally:
+        engine.dispose()
+
+
+def test_same_external_id_different_kind_allowed(head_db: str) -> None:
+    engine = create_engine(head_db, future=True)
+    try:
+        with engine.begin() as conn:
+            a = _insert_institution(conn, external_id="77", kind="nursery")
+            b = _insert_institution(conn, external_id="77", kind="kindergarten")
+        assert a != b
+    finally:
+        engine.dispose()
+
+
+def test_address_entry_cascades_on_institution_delete(head_db: str) -> None:
+    engine = create_engine(head_db, future=True)
+    try:
+        with engine.begin() as conn:
+            inst_id = _insert_institution(conn, external_id="900", kind="nursery")
+            street_id = _insert_street(conn, raw_name="ГР.ВАРНА УЛ. ГЕНЕРАЛ КОЛЕВ")
+            conn.execute(
+                text(
+                    "INSERT INTO address_entries "
+                    "(institution_id, street_id, number_int, number_suffix, entrance) "
+                    "VALUES (:i, :s, :n, NULL, NULL)"
+                ),
+                {"i": inst_id, "s": street_id, "n": 5},
+            )
+
+        with engine.begin() as conn:
+            count_before = conn.execute(
+                text("SELECT count(*) FROM address_entries WHERE institution_id = :i"),
+                {"i": inst_id},
+            ).scalar_one()
+            assert count_before == 1
+
+            conn.execute(text("DELETE FROM institutions WHERE id = :i"), {"i": inst_id})
+
+            count_after = conn.execute(
+                text("SELECT count(*) FROM address_entries WHERE institution_id = :i"),
+                {"i": inst_id},
+            ).scalar_one()
+            assert count_after == 0
+    finally:
+        engine.dispose()

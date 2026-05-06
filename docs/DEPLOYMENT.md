@@ -120,19 +120,31 @@ running it once during this rollout is enough. From s05 onwards, every
 PR that adds an Alembic revision adds an entry to that PR's deploy
 checklist.
 
+**s05 deploy: revision `0002_data_model`.** Running `alembic upgrade
+head` after the s05 deploy advances the production DB from `0001` to
+`0002` and creates the three core tables (`institutions`, `streets`,
+`address_entries`) plus the `pg_trgm` extension and two non-PK indexes.
+The Railway-managed Postgres includes `pg_trgm` in its default contrib
+set, so `CREATE EXTENSION IF NOT EXISTS pg_trgm` from the migration
+runs without superuser intervention. If a future Postgres host strips
+contrib, the operator can run the same `CREATE EXTENSION` statement
+manually before the migration; the migration is idempotent on the
+extension. The `0002` downgrade drops the tables and indexes but
+intentionally leaves `pg_trgm` installed.
+
 Two ways to run it on Railway:
 
 1. **One-off run command (recommended for this change).** From the
    `backend-api` service → **Settings** → **Run command** (or the
    equivalent "exec into deployment" panel) → enter
    `alembic upgrade head` and hit run. Watch the logs for
-   `Running upgrade -> 0001, init` (or, on a re-run, no-op output
-   ending with exit 0).
+   `Running upgrade 0001 -> 0002, data_model` (or, on a re-run, no-op
+   output ending with exit 0).
 2. **Release-phase command (preferred long-term).** Add a Railway
    pre-deploy hook to `backend-api` that runs `alembic upgrade head`
    before swapping the new container in. This keeps the deploy and
-   migration atomic. We'll switch to this in s05 when the first real
-   table-creating migration lands; for now the one-off run is fine.
+   migration atomic. We'll switch to this when the next table-creating
+   migration lands; for now the one-off run is fine.
 
 > **Single-head policy.** Alembic does not tolerate multiple heads. If
 > two pull requests each add a migration in parallel, after both merge
@@ -157,12 +169,15 @@ Before relying on either service, prove the pipeline works.
    **Deployments** → **Run now** (or whichever button currently
    triggers a one-shot run). Open the resulting deployment's logs.
    Expected:
-   - One stdout line: `yasli.ingest: stub run; no-op until s06`.
+   - `yasli.ingest: stub run; no-op until s06`
+   - `yasli.ingest: institutions row count = 0` (post-s05; the table
+     exists and is empty until s06 ingest lands).
    - Exit code 0 ("Exited with code 0" in the dashboard).
 3. **Postgres.** Open the Postgres plugin → **Data** tab → confirm an
-   `alembic_version` table exists with a single row, `version_num =
-   '0001'`. (If you haven't yet run the migration, do that first per
-   the previous section.)
+   `alembic_version` table exists with a single row whose `version_num`
+   matches the current head (`0001` after s04, `0002` after s05). The
+   `institutions`, `streets`, and `address_entries` tables exist and
+   are empty after s05's migration runs.
 
 If all three are green, the backend is wired end-to-end. Subsequent
 changes (s05–s09) will only add behaviour — no further Railway setup.
