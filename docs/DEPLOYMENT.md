@@ -61,7 +61,10 @@ endpoints).
    - **Service name:** `backend-api` (rename from the default).
    - **Service type:** **Web** (default; leave as-is).
    - **Start command:**
-     `uvicorn yasli.main:app --host 0.0.0.0 --port $PORT`
+     `sh -c 'uvicorn yasli.main:app --host 0.0.0.0 --port ${PORT:-8080}'`
+     (the `sh -c` wrapper is mandatory — Railway passes the start
+     command through `exec` rather than a shell, so a bare `$PORT`
+     would reach uvicorn as the literal string `$PORT`.)
    - **Public networking:** enable a public domain
      (`<service-name>-<project>.up.railway.app`). Railway sets `$PORT`
      automatically.
@@ -209,6 +212,26 @@ or run with `--network=host`.
 ---
 
 ## Troubleshooting
+
+### `Invalid value for '--port': '$PORT' is not a valid integer`
+
+**Symptom:** Logs from `backend-api` show repeated:
+```
+Error: Invalid value for '--port': '$PORT' is not a valid integer.
+Usage: uvicorn [OPTIONS] APP
+```
+…and the public domain returns nothing.
+
+**Fix:** Railway runs the start command via `exec`, not through a
+shell, so a bare `$PORT` is passed to uvicorn as a literal string.
+Wrap the command in `sh -c`:
+
+```
+sh -c 'uvicorn yasli.main:app --host 0.0.0.0 --port ${PORT:-8080}'
+```
+
+The `${PORT:-8080}` form also falls back to 8080 if Railway ever
+forgets to inject the variable.
 
 ### `DATABASE_URL` mishandled by SQLAlchemy
 
