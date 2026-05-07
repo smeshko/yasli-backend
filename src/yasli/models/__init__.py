@@ -15,7 +15,7 @@ class Base(DeclarativeBase):
 from yasli.models.types import KIND_VALUES, Kind  # noqa: E402
 from yasli.models.institution import Institution  # noqa: E402
 from yasli.models.street import Street  # noqa: E402
-from yasli.models.address_entry import AddressEntry  # noqa: E402
+from yasli.models.address import Address, address_institutions  # noqa: E402
 
 __all__ = [
     "Base",
@@ -23,5 +23,6 @@ __all__ = [
     "KIND_VALUES",
     "Institution",
     "Street",
-    "AddressEntry",
+    "Address",
+    "address_institutions",
 ]

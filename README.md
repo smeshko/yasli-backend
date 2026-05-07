@@ -11,11 +11,11 @@ produces the R2 snapshots lives in
 ## Status
 
 `v0.1.0` — bootstrap. The web service exposes `GET /api/health` (which pings
-the DB), Alembic is at revision `0002` with the v1 data-model schema
-(`institutions`, `streets`, `address_entries` + `pg_trgm` trigram index on
-`streets.search_norm`), and the ingest CLI is a schema-presence stub that
-logs the `institutions` row count. Real ingest and search endpoints land in
-follow-up changes (s06–s09).
+the DB), Alembic is at revision `0003` with the address-centric v1 schema
+(`institutions`, `streets`, `addresses`, `address_institutions` + `pg_trgm`
+trigram index on `streets.search_norm`), and the ingest CLI is a
+schema-presence stub that logs the `institutions` row count. Real ingest
+and search endpoints land in follow-up changes (s06–s09).
 
 ## Quickstart (local, Python)
 
@@ -32,8 +32,9 @@ docker run --rm -e POSTGRES_PASSWORD=dev -p 5432:5432 postgres:16
 # Point the backend at it
 export DATABASE_URL=postgres://postgres:dev@localhost:5432/postgres
 
-# Run the migrations — creates the pg_trgm extension, the three v1
-# tables (institutions, streets, address_entries) and their indexes
+# Run the migrations — creates the pg_trgm extension, the four v1
+# tables (institutions, streets, addresses, address_institutions) and
+# their indexes
 alembic upgrade head
 
 # Serve the API
@@ -43,11 +44,28 @@ uvicorn yasli.main:app --host 0.0.0.0 --port 8000
 curl http://localhost:8000/api/health
 # → {"status": "ok", "db": "ok"}
 
-# Run the ingest CLI stub (logs institutions row count; 0 until s06)
+# Run the ingest CLI: pulls snapshots/varna/latest.json from R2 and
+# upserts into Postgres in one transaction. Set the four R2_* env vars
+# alongside DATABASE_URL — a read-only Cloudflare R2 access key is
+# enough.
+export R2_ACCOUNT_ID=…
+export R2_ACCESS_KEY_ID=…
+export R2_SECRET_ACCESS_KEY=…
+export R2_BUCKET=yasli-snapshots
 python -m yasli.ingest
+# → ingest done snapshot=… institutions={inserted:N,updated:0,…} \
+#   streets={inserted:M,…} addresses={inserted:A,…} \
+#   address_institutions={inserted:E,unchanged:0} \
+#   skipped_rows=0 elapsed_ms=…
+# First run against a fresh DB is roughly 30–90 s for the production
+# snapshot (~70 institutions, ~2.3k streets, ~49k addresses, ~236k
+# coverage edges). Subsequent runs are faster (mostly no-op upserts).
 
 # Run tests. Migration and constraint tests need a Postgres URL —
 # point YASLI_TEST_DATABASE_URL at a throwaway DB; otherwise they skip.
+# Ingest integration tests need Docker (testcontainers spins up
+# Postgres). Pure-Python tests (parser, normaliser, schema drift) run
+# without either.
 export YASLI_TEST_DATABASE_URL=postgres://postgres:dev@localhost:5432/postgres
 pytest
 ```
@@ -58,23 +76,37 @@ internally.
 
 ## Required environment variables
 
-| Variable        | Purpose                                                        |
-| --------------- | -------------------------------------------------------------- |
-| `DATABASE_URL`  | Postgres connection URL. Validated at startup; missing = fail. |
+The web service (`uvicorn yasli.main:app`) needs only `DATABASE_URL`.
+The ingest CLI (`python -m yasli.ingest`) additionally needs the four
+`R2_*` variables — they're validated at startup before any network call.
+
+| Variable                | Used by               | Purpose                                                        |
+| ----------------------- | --------------------- | -------------------------------------------------------------- |
+| `DATABASE_URL`          | web + ingest          | Postgres connection URL. Both `postgres://` and `postgresql+psycopg://` accepted. |
+| `R2_ACCOUNT_ID`         | ingest                | Cloudflare R2 account id (constructs the endpoint URL).        |
+| `R2_ACCESS_KEY_ID`      | ingest                | Read-only R2 access key id.                                    |
+| `R2_SECRET_ACCESS_KEY`  | ingest                | Read-only R2 access key secret.                                |
+| `R2_BUCKET`             | ingest                | Snapshot bucket, typically `yasli-snapshots`.                  |
 
 ## Layout
 
 ```
 src/yasli/
-  __init__.py        # __version__
-  config.py          # Settings (env-var parsing + URL normalisation)
-  db.py              # engine, SessionLocal, get_db
-  main.py            # FastAPI app
-  routes/health.py   # GET /api/health
-  models/            # Base + ORM classes (Institution, Street, AddressEntry)
-  ingest/__main__.py # python -m yasli.ingest entry; logs row count, real ingest in s06
-migrations/          # Alembic
-tests/               # pytest suite
+  __init__.py            # __version__
+  config.py              # Settings (env-var parsing + URL normalisation)
+  db.py                  # engine, SessionLocal, get_db
+  main.py                # FastAPI app
+  routes/health.py       # GET /api/health
+  models/                # Base + ORM classes (Institution, Street, Address) + address_institutions Table
+  snapshot_contract/     # Vendored Pydantic Snapshot models (v1)
+  ingest/                # python -m yasli.ingest pipeline
+    __main__.py          # CLI entrypoint (argparse, exit-code mapping)
+    pipeline.py          # fetch → validate → parse → upsert → log
+    r2.py                # boto3 R2 client wrapper
+    parser.py            # house-number string → (int, suffix, entrance)
+    normalise.py         # raw street → (city, marker, part, search_norm)
+migrations/              # Alembic
+tests/                   # pytest suite
 docs/DEPLOYMENT.md   # operator setup guide
 Dockerfile           # python:3.12-slim image
 pyproject.toml

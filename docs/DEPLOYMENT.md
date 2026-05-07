@@ -81,8 +81,10 @@ endpoints).
 ## `backend-ingest` service
 
 A cron service that shares the same image as `backend-api` but runs
-`python -m yasli.ingest`. In this change it is a no-op stub; the real
-ingest behaviour ships in s06.
+`python -m yasli.ingest`. As of s06 this is the real ingest pipeline:
+on every cron firing it pulls `snapshots/varna/latest.json` from R2,
+validates it against the v1 contract, and upserts institutions /
+streets / address entries into Postgres in a single transaction.
 
 1. From the `yasli` project view, click **+ New** → **Deploy from GitHub
    repo** and select the **same** `smeshko/yasli-backend` repo. Railway
@@ -91,15 +93,21 @@ ingest behaviour ships in s06.
 2. In the new service tile → **Settings**:
    - **Service name:** `backend-ingest`.
    - **Service type:** **Cron**.
-   - **Schedule:** `30 2 * * 0` — Sundays at 02:30 UTC. This is
-     deliberately 30 minutes after the scraper's 02:00 cron so the
-     backend reads a fresh snapshot. (Adjust later if scraper runtime
-     drifts.)
+   - **Schedule:** `0 2 * * 0` — Sundays at 02:00 UTC, one hour after
+     the scraper's 01:00 UTC run. (See `ARCHITECTURE.md`. Adjust later
+     if the scraper's runtime drifts.)
    - **Start command:** `python -m yasli.ingest`
    - **Public networking:** **disabled**. Cron services don't accept
      traffic.
-3. **Variables** → add `DATABASE_URL = ${{Postgres.DATABASE_URL}}`,
-   identical to the web service.
+3. **Variables** → add the following:
+   - `DATABASE_URL = ${{Postgres.DATABASE_URL}}` (same reference as
+     `backend-api`).
+   - `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`,
+     `R2_BUCKET` — provision a **read-only** R2 access key in
+     Cloudflare against the `yasli-snapshots` bucket and paste the
+     four values here. The scraper service has Read+Write; the backend
+     gets a separate Read-only key with the same account/bucket so a
+     buggy backend deploy can never overwrite a snapshot.
 4. **Redeploy**.
 
 > **Web vs Cron mistakes are silent failures.** A web-typed
@@ -132,14 +140,24 @@ manually before the migration; the migration is idempotent on the
 extension. The `0002` downgrade drops the tables and indexes but
 intentionally leaves `pg_trgm` installed.
 
+**Address-centric deploy: revision `0003_address_centric_schema`.**
+Running `alembic upgrade head` after this change advances the DB from
+`0002` to `0003`, **drops `address_entries`** and creates `addresses`
+(one row per distinct physical address) plus `address_institutions`
+(many-to-many coverage junction) with an `(address_id)` lookup index.
+No production data exists at the time of this rollout — drop-and-
+recreate is safe; the new tables are populated by re-running
+`backend-ingest` after the migration. The downgrade drops the new
+tables and recreates `address_entries` empty.
+
 Two ways to run it on Railway:
 
 1. **One-off run command (recommended for this change).** From the
    `backend-api` service → **Settings** → **Run command** (or the
    equivalent "exec into deployment" panel) → enter
    `alembic upgrade head` and hit run. Watch the logs for
-   `Running upgrade 0001 -> 0002, data_model` (or, on a re-run, no-op
-   output ending with exit 0).
+   `Running upgrade 0002 -> 0003, address_centric_schema` (or, on a
+   re-run, no-op output ending with exit 0).
 2. **Release-phase command (preferred long-term).** Add a Railway
    pre-deploy hook to `backend-api` that runs `alembic upgrade head`
    before swapping the new container in. This keeps the deploy and
@@ -169,18 +187,78 @@ Before relying on either service, prove the pipeline works.
    **Deployments** → **Run now** (or whichever button currently
    triggers a one-shot run). Open the resulting deployment's logs.
    Expected:
-   - `yasli.ingest: stub run; no-op until s06`
-   - `yasli.ingest: institutions row count = 0` (post-s05; the table
-     exists and is empty until s06 ingest lands).
+   - A single structured summary line, e.g.
+     `ingest done snapshot=2026-05-04T01:00:00Z institutions={inserted:N,updated:0,unchanged:0,disappeared:0} streets={inserted:M,updated:0,unchanged:0} addresses={inserted:A,updated:0,unchanged:0} address_institutions={inserted:E,unchanged:0} skipped_rows=0 elapsed_ms=…`
+     For Varna's snapshot, expect roughly `~70` institutions, `~2.3k`
+     streets, `~49k` addresses, and `~236k` coverage edges on the first
+     run; second-run counts move to the `unchanged` columns.
    - Exit code 0 ("Exited with code 0" in the dashboard).
+   - Re-running immediately should report `inserted:0` for every
+     table and a non-zero `unchanged` count — that's the idempotency
+     guarantee in action.
 3. **Postgres.** Open the Postgres plugin → **Data** tab → confirm an
    `alembic_version` table exists with a single row whose `version_num`
-   matches the current head (`0001` after s04, `0002` after s05). The
-   `institutions`, `streets`, and `address_entries` tables exist and
-   are empty after s05's migration runs.
+   matches the current head (`0001` after s04, `0002` after s05,
+   `0003` after the address-centric restructure). After `0003`,
+   `institutions`, `streets`, `addresses`, and `address_institutions`
+   exist and `address_entries` is gone; the four tables are empty
+   until `backend-ingest` runs.
 
 If all three are green, the backend is wired end-to-end. Subsequent
 changes (s05–s09) will only add behaviour — no further Railway setup.
+
+---
+
+## Backend ingest (s06)
+
+`backend-ingest` reads `snapshots/varna/latest.json` from R2 and writes
+the contents into Postgres. The cron service was set up earlier in this
+document; this section is the operator runbook for the ingest pipeline
+itself.
+
+### Required env vars
+
+| Variable                | Purpose                                      |
+| ----------------------- | -------------------------------------------- |
+| `DATABASE_URL`          | Postgres connection (already wired from s04). |
+| `R2_ACCOUNT_ID`         | Cloudflare R2 account id.                     |
+| `R2_ACCESS_KEY_ID`      | Read-only R2 access key id.                   |
+| `R2_SECRET_ACCESS_KEY`  | Read-only R2 access key secret.               |
+| `R2_BUCKET`             | `yasli-snapshots`.                            |
+
+The four `R2_*` vars share the bucket with the scraper but **must** be
+a separate read-only key — provision in the Cloudflare dashboard, not
+by reusing the scraper's read+write key.
+
+### Cron schedule
+
+`0 2 * * 0` (UTC) — every Sunday at 02:00 UTC, one hour after the
+scraper writes the new `latest.json` at 01:00 UTC.
+
+### Manual run procedure
+
+1. **Railway dashboard** → `backend-ingest` service → **Deployments** →
+   **Run now**.
+2. **Logs** tab on the resulting deployment.
+3. Expect a single line beginning with `ingest done snapshot=…` and an
+   exit code of 0. The line includes counts per table (inserted /
+   updated / unchanged / disappeared) and `elapsed_ms`.
+
+If the run exits non-zero, the most common causes are:
+
+- **Missing R2 var** → first line of stderr names the variable; add it
+  in Variables and redeploy.
+- **R2 returned 403** → the access key isn't scoped to
+  `yasli-snapshots`; reissue from Cloudflare with the right scope.
+- **`pydantic.ValidationError`** → the snapshot violates the v1
+  contract. Compare with `yasli/scraper/schemas/snapshot.v1.schema.json`
+  and check the scraper's most recent run.
+- **`SQLAlchemyError` / DB connection refused** → Postgres plugin is
+  unhealthy or the `DATABASE_URL` reference broke. Verify in the
+  Postgres tile.
+
+The transaction is atomic: a failed run leaves the DB at the previous
+snapshot's state. Re-run the cron job after fixing the root cause.
 
 ---
 

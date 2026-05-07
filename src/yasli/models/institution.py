@@ -4,12 +4,16 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import BigInteger, CheckConstraint, DateTime, String, UniqueConstraint
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from yasli.models import Base
 from yasli.models.types import KIND_VALUES, Kind
+
+if TYPE_CHECKING:
+    from yasli.models.address import Address
 
 
 class Institution(Base):
@@ -29,4 +33,11 @@ class Institution(Base):
     source_url: Mapped[str] = mapped_column(String(512), nullable=False)
     last_seen_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
+    )
+
+    addresses: Mapped[list["Address"]] = relationship(
+        "Address",
+        secondary="address_institutions",
+        back_populates="institutions",
+        lazy="raise",
     )

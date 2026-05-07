@@ -110,27 +110,40 @@ def test_round_trip_upgrade_downgrade_upgrade(fresh_db: str) -> None:
     up1 = _alembic(["upgrade", "head"], url)
     assert up1.returncode == 0, up1.stderr
     eng = _engine(url)
-    assert _current_revision(eng) == "0002"
+    assert _current_revision(eng) == "0003"
     tables = _table_names(eng)
-    assert {"institutions", "streets", "address_entries"}.issubset(tables)
+    assert {
+        "institutions",
+        "streets",
+        "addresses",
+        "address_institutions",
+    }.issubset(tables)
+    assert "address_entries" not in tables
     eng.dispose()
 
     down = _alembic(["downgrade", "-1"], url)
     assert down.returncode == 0, down.stderr
     eng = _engine(url)
-    assert _current_revision(eng) == "0001"
+    assert _current_revision(eng) == "0002"
     tables = _table_names(eng)
-    assert "institutions" not in tables
-    assert "streets" not in tables
-    assert "address_entries" not in tables
+    # 0002 shape: institutions/streets/address_entries; new tables gone.
+    assert {"institutions", "streets", "address_entries"}.issubset(tables)
+    assert "addresses" not in tables
+    assert "address_institutions" not in tables
     eng.dispose()
 
     up2 = _alembic(["upgrade", "head"], url)
     assert up2.returncode == 0, up2.stderr
     eng = _engine(url)
-    assert _current_revision(eng) == "0002"
+    assert _current_revision(eng) == "0003"
     tables = _table_names(eng)
-    assert {"institutions", "streets", "address_entries"}.issubset(tables)
+    assert {
+        "institutions",
+        "streets",
+        "addresses",
+        "address_institutions",
+    }.issubset(tables)
+    assert "address_entries" not in tables
     eng.dispose()
 
 
@@ -171,30 +184,34 @@ def test_pg_trgm_extension_present(fresh_db: str) -> None:
     assert rows == [("pg_trgm",)]
 
 
-def test_address_entries_has_no_priority_class_column(fresh_db: str) -> None:
+def test_addresses_columns_and_natural_unique(fresh_db: str) -> None:
     url = fresh_db
     up = _alembic(["upgrade", "head"], url)
     assert up.returncode == 0, up.stderr
 
     eng = _engine(url)
     with eng.connect() as conn:
-        rows = conn.execute(
+        cols = conn.execute(
             text(
                 "SELECT column_name FROM information_schema.columns "
-                "WHERE table_name = 'address_entries'"
+                "WHERE table_name = 'addresses'"
+            )
+        ).all()
+        constraints = conn.execute(
+            text(
+                "SELECT conname FROM pg_constraint "
+                "WHERE conrelid = 'addresses'::regclass"
             )
         ).all()
     eng.dispose()
-    columns = {row[0] for row in rows}
-    assert "priority_class" not in columns, (
-        "priority_class is dropped per s02 Decision 8 — do not reintroduce it "
-        "without a snapshot.v2 contract bump"
-    )
-    assert {"institution_id", "street_id", "number_int", "number_suffix", "entrance"} <= columns
+    columns = {row[0] for row in cols}
+    assert {"id", "street_id", "number_int", "number_suffix", "entrance"} <= columns
+    constraint_names = {c[0] for c in constraints}
+    assert "uq_addresses_natural" in constraint_names
 
 
-def test_address_entries_lookup_index_present(fresh_db: str) -> None:
-    """Index on (street_id, number_int) for the s08 match endpoint."""
+def test_address_institutions_lookup_index_present(fresh_db: str) -> None:
+    """Index on `(address_id)` for the s08 match endpoint's join."""
     url = fresh_db
     up = _alembic(["upgrade", "head"], url)
     assert up.returncode == 0, up.stderr
@@ -204,12 +221,11 @@ def test_address_entries_lookup_index_present(fresh_db: str) -> None:
         rows = conn.execute(
             text(
                 "SELECT indexdef FROM pg_indexes "
-                "WHERE tablename = 'address_entries' "
-                "  AND indexname = 'address_entries_lookup'"
+                "WHERE tablename = 'address_institutions' "
+                "  AND indexname = 'ix_address_institutions_address_id'"
             )
         ).all()
     eng.dispose()
     assert len(rows) == 1
     indexdef = rows[0][0].lower()
-    assert "street_id" in indexdef
-    assert "number_int" in indexdef
+    assert "address_id" in indexdef

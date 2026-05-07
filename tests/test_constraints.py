@@ -1,8 +1,9 @@
 """Database constraint tests against a real Postgres at head.
 
 Verifies that the schema enforces what the spec promises: the `kind` CHECK,
-the `(external_id, kind)` UNIQUE, and the cascading delete from
-institutions to address_entries. Skips when no Postgres is reachable.
+the `(external_id, kind)` UNIQUE, and the cascading deletes from
+streets/institutions through addresses/address_institutions. Skips when no
+Postgres is reachable.
 """
 
 from __future__ import annotations
@@ -111,6 +112,34 @@ def _insert_street(conn, *, raw_name: str) -> int:
     return int(row)
 
 
+def _insert_address(
+    conn,
+    *,
+    street_id: int,
+    number_int: int,
+    number_suffix: str | None = None,
+    entrance: str | None = None,
+) -> int:
+    row = conn.execute(
+        text(
+            "INSERT INTO addresses (street_id, number_int, number_suffix, entrance) "
+            "VALUES (:s, :n, :sfx, :ent) RETURNING id"
+        ),
+        {"s": street_id, "n": number_int, "sfx": number_suffix, "ent": entrance},
+    ).scalar_one()
+    return int(row)
+
+
+def _insert_edge(conn, *, address_id: int, institution_id: int) -> None:
+    conn.execute(
+        text(
+            "INSERT INTO address_institutions (address_id, institution_id) "
+            "VALUES (:a, :i)"
+        ),
+        {"a": address_id, "i": institution_id},
+    )
+
+
 def test_kind_check_rejects_old_source_value(head_db: str) -> None:
     engine = create_engine(head_db, future=True)
     try:
@@ -153,34 +182,143 @@ def test_same_external_id_different_kind_allowed(head_db: str) -> None:
         engine.dispose()
 
 
-def test_address_entry_cascades_on_institution_delete(head_db: str) -> None:
+def test_addresses_natural_unique_rejects_duplicate(head_db: str) -> None:
+    engine = create_engine(head_db, future=True)
+    try:
+        with engine.begin() as conn:
+            street_id = _insert_street(conn, raw_name="ГР.ВАРНА УЛ. ГЕНЕРАЛ КОЛЕВ")
+            _insert_address(
+                conn,
+                street_id=street_id,
+                number_int=5,
+                number_suffix="А",
+                entrance="01",
+            )
+
+        with engine.begin() as conn, pytest.raises(IntegrityError):
+            _insert_address(
+                conn,
+                street_id=street_id,
+                number_int=5,
+                number_suffix="А",
+                entrance="01",
+            )
+    finally:
+        engine.dispose()
+
+
+def test_addresses_cascade_on_street_delete(head_db: str) -> None:
+    engine = create_engine(head_db, future=True)
+    try:
+        with engine.begin() as conn:
+            street_id = _insert_street(conn, raw_name="ГР.ВАРНА УЛ. КАСКАД")
+            _insert_address(conn, street_id=street_id, number_int=1)
+            _insert_address(conn, street_id=street_id, number_int=2)
+
+        with engine.begin() as conn:
+            count_before = conn.execute(
+                text("SELECT count(*) FROM addresses WHERE street_id = :s"),
+                {"s": street_id},
+            ).scalar_one()
+            assert count_before == 2
+
+            conn.execute(text("DELETE FROM streets WHERE id = :s"), {"s": street_id})
+
+            count_after = conn.execute(
+                text("SELECT count(*) FROM addresses WHERE street_id = :s"),
+                {"s": street_id},
+            ).scalar_one()
+            assert count_after == 0
+    finally:
+        engine.dispose()
+
+
+def test_address_institutions_cascade_on_address_delete(head_db: str) -> None:
     engine = create_engine(head_db, future=True)
     try:
         with engine.begin() as conn:
             inst_id = _insert_institution(conn, external_id="900", kind="nursery")
             street_id = _insert_street(conn, raw_name="ГР.ВАРНА УЛ. ГЕНЕРАЛ КОЛЕВ")
-            conn.execute(
-                text(
-                    "INSERT INTO address_entries "
-                    "(institution_id, street_id, number_int, number_suffix, entrance) "
-                    "VALUES (:i, :s, :n, NULL, NULL)"
-                ),
-                {"i": inst_id, "s": street_id, "n": 5},
+            address_id = _insert_address(
+                conn, street_id=street_id, number_int=5
             )
+            _insert_edge(conn, address_id=address_id, institution_id=inst_id)
 
         with engine.begin() as conn:
             count_before = conn.execute(
-                text("SELECT count(*) FROM address_entries WHERE institution_id = :i"),
+                text(
+                    "SELECT count(*) FROM address_institutions "
+                    "WHERE address_id = :a"
+                ),
+                {"a": address_id},
+            ).scalar_one()
+            assert count_before == 1
+
+            conn.execute(text("DELETE FROM addresses WHERE id = :a"), {"a": address_id})
+
+            count_after = conn.execute(
+                text(
+                    "SELECT count(*) FROM address_institutions "
+                    "WHERE address_id = :a"
+                ),
+                {"a": address_id},
+            ).scalar_one()
+            assert count_after == 0
+    finally:
+        engine.dispose()
+
+
+def test_address_institutions_cascade_on_institution_delete(head_db: str) -> None:
+    engine = create_engine(head_db, future=True)
+    try:
+        with engine.begin() as conn:
+            inst_id = _insert_institution(conn, external_id="901", kind="nursery")
+            street_id = _insert_street(conn, raw_name="ГР.ВАРНА УЛ. ИНСТ-ДЕЛ")
+            address_id = _insert_address(conn, street_id=street_id, number_int=7)
+            _insert_edge(conn, address_id=address_id, institution_id=inst_id)
+
+        with engine.begin() as conn:
+            count_before = conn.execute(
+                text(
+                    "SELECT count(*) FROM address_institutions "
+                    "WHERE institution_id = :i"
+                ),
                 {"i": inst_id},
             ).scalar_one()
             assert count_before == 1
 
-            conn.execute(text("DELETE FROM institutions WHERE id = :i"), {"i": inst_id})
+            conn.execute(
+                text("DELETE FROM institutions WHERE id = :i"), {"i": inst_id}
+            )
 
             count_after = conn.execute(
-                text("SELECT count(*) FROM address_entries WHERE institution_id = :i"),
+                text(
+                    "SELECT count(*) FROM address_institutions "
+                    "WHERE institution_id = :i"
+                ),
                 {"i": inst_id},
             ).scalar_one()
             assert count_after == 0
+            # The Address row itself is NOT cascaded — only the junction.
+            still_there = conn.execute(
+                text("SELECT count(*) FROM addresses WHERE id = :a"),
+                {"a": address_id},
+            ).scalar_one()
+            assert still_there == 1
+    finally:
+        engine.dispose()
+
+
+def test_address_institutions_pkey_rejects_duplicate(head_db: str) -> None:
+    engine = create_engine(head_db, future=True)
+    try:
+        with engine.begin() as conn:
+            inst_id = _insert_institution(conn, external_id="902", kind="nursery")
+            street_id = _insert_street(conn, raw_name="ГР.ВАРНА УЛ. ДУПЛ")
+            address_id = _insert_address(conn, street_id=street_id, number_int=1)
+            _insert_edge(conn, address_id=address_id, institution_id=inst_id)
+
+        with engine.begin() as conn, pytest.raises(IntegrityError):
+            _insert_edge(conn, address_id=address_id, institution_id=inst_id)
     finally:
         engine.dispose()

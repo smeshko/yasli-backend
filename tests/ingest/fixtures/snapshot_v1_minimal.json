@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "scraped_at": "2026-05-04T01:00:00Z",
+  "city": "varna",
+  "institutions": [
+    {
+      "external_id": "1001",
+      "name": "ОДЗ Море",
+      "kind": "nursery",
+      "source_url": "https://example.test/inst/1001",
+      "address_entries": [
+        {"street": "ГР.ВАРНА БУЛ.ВЛАДИСЛАВ ВАРНЕНЧИК", "number": "085"},
+        {"street": "ГР.ВАРНА БУЛ.ВЛАДИСЛАВ ВАРНЕНЧИК", "number": "019А"}
+      ]
+    },
+    {
+      "external_id": "1002",
+      "name": "ДГ Слънчо",
+      "kind": "kindergarten",
+      "source_url": "https://example.test/inst/1002",
+      "address_entries": [
+        {"street": "С. ТОПОЛИ УЛ.ХАН АСПАРУХ", "number": "041 вх.А"},
+        {"street": "ГР.ВАРНА КАД.ПЛАН ТРАКАТА", "number": "002А вх.01"}
+      ]
+    },
+    {
+      "external_id": "1003",
+      "name": "Подготвителна група Калина",
+      "kind": "preschool",
+      "source_url": "https://example.test/inst/1003",
+      "address_entries": [
+        {"street": "ГР.ВАРНА УЛ.ГЕНЕРАЛ КОЛЕВ", "number": "12"},
+        {"street": "ГР.ВАРНА ВИЛНА ЗОНА АЛЕН МАК-2", "number": "7"},
+        {"street": "ГР.ВАРНА БУЛ.ВЛАДИСЛАВ ВАРНЕНЧИК", "number": "86"},
+        {"street": "ГР.ВАРНА БУЛ.ВЛАДИСЛАВ ВАРНЕНЧИК", "number": "087"},
+        {"street": "ГР.ВАРНА БУЛ.ВЛАДИСЛАВ ВАРНЕНЧИК", "number": "085"}
+      ]
+    }
+  ]
+}
