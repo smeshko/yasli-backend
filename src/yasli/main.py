@@ -7,9 +7,25 @@ is created lazily on the first request that hits a route depending on
 
 from __future__ import annotations
 
-from fastapi import FastAPI
+import logging
+
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+from sqlalchemy.exc import SQLAlchemyError
 
 from yasli.routes.health import router as health_router
+from yasli.routes.streets import router as streets_router
 
 app = FastAPI(title="yasli")
 app.include_router(health_router, prefix="/api")
+app.include_router(streets_router, prefix="/api")
+
+
+@app.exception_handler(SQLAlchemyError)
+async def sqlalchemy_error_handler(request: Request, exc: SQLAlchemyError) -> JSONResponse:
+    del request
+    logging.exception("database error", exc_info=exc)
+    return JSONResponse(
+        status_code=503,
+        content={"status": "degraded", "error": "database unreachable"},
+    )

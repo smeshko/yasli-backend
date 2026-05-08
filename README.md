@@ -11,11 +11,13 @@ produces the R2 snapshots lives in
 ## Status
 
 `v0.1.0` — bootstrap. The web service exposes `GET /api/health` (which pings
-the DB), Alembic is at revision `0003` with the address-centric v1 schema
-(`institutions`, `streets`, `addresses`, `address_institutions` + `pg_trgm`
-trigram index on `streets.search_norm`), and the ingest CLI is a
-schema-presence stub that logs the `institutions` row count. Real ingest
-and search endpoints land in follow-up changes (s06–s09).
+the DB) and `GET /api/streets` (the bulk dump of every Varna street row,
+strong content-derived `ETag`, hour-long `Cache-Control`). Alembic is at
+revision `0003` with the address-centric v1 schema (`institutions`,
+`streets`, `addresses`, `address_institutions` + `pg_trgm` trigram index
+on `streets.search_norm`), and the ingest CLI is a schema-presence stub
+that logs the `institutions` row count. Match and institution-detail
+endpoints land in follow-up changes (s08–s09).
 
 ## Quickstart (local, Python)
 
@@ -43,6 +45,14 @@ uvicorn yasli.main:app --host 0.0.0.0 --port 8000
 # Smoke-test
 curl http://localhost:8000/api/health
 # → {"status": "ok", "db": "ok"}
+
+# Bulk-dump every street row (~2,272 after a real ingest, including the
+# ~295 compound-locality rows whose `street_part` is empty). The response
+# carries a strong `ETag`; revalidate with `If-None-Match` to get a 304.
+curl -i http://localhost:8000/api/streets | head -5
+# HTTP/1.1 200 OK
+# etag: "v1-…"
+# cache-control: public, max-age=3600, stale-while-revalidate=86400
 
 # Run the ingest CLI: pulls snapshots/varna/latest.json from R2 and
 # upserts into Postgres in one transaction. Set the four R2_* env vars
@@ -97,6 +107,7 @@ src/yasli/
   db.py                  # engine, SessionLocal, get_db
   main.py                # FastAPI app
   routes/health.py       # GET /api/health
+  routes/streets.py      # GET /api/streets (bulk dump + ETag/Cache-Control)
   models/                # Base + ORM classes (Institution, Street, Address) + address_institutions Table
   snapshot_contract/     # Vendored Pydantic Snapshot models (v1)
   ingest/                # python -m yasli.ingest pipeline
