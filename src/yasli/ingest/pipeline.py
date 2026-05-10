@@ -40,7 +40,6 @@ from yasli.ingest import r2
 from yasli.ingest.normalise import (
     UnknownLocality,
     parse_street,
-    to_search_norm,
 )
 from yasli.ingest.parser import (
     NumberOutOfRange,

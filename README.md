@@ -13,14 +13,16 @@ produces the R2 snapshots lives in
 `v0.1.0` — bootstrap. The web service exposes `GET /api/health` (which pings
 the DB), `GET /api/streets` (the bulk dump of every Varna street row),
 `GET /api/addresses` (the bulk dump of every canonical address), and
-`GET /api/match` (the address-to-institution lookup). The bulk dump endpoints
-carry strong content-derived `ETag` headers and hour-long `Cache-Control`.
+`GET /api/match` (the address-to-institution lookup),
+`GET /api/institutions` (the institution list), and
+`GET /api/institutions/{institution_id}` (institution profile coverage). The
+snapshot read endpoints carry strong content-derived `ETag` headers and
+hour-long `Cache-Control`.
 Alembic is at revision `0003` with the address-centric v1 schema
 (`institutions`, `streets`, `addresses`, `address_institutions` +
 `pg_trgm` trigram index on `streets.search_norm`). The ingest CLI pulls the
 latest scraper snapshot from R2 and upserts streets, addresses, institutions,
-and address coverage edges into Postgres. The institution-detail endpoint
-lands in a follow-up change (s09).
+and address coverage edges into Postgres.
 
 ## Quickstart (local, Python)
 
@@ -68,6 +70,21 @@ curl -i http://localhost:8000/api/addresses | head -5
 # kind=kindergarten, or kind=preschool to filter the flat result list.
 curl "http://localhost:8000/api/match?address_id=1"
 # → [{"id":...,"external_id":"...","name":"...","kind":"...","source_url":"..."}]
+
+# List all institutions in browse-display order. The response uses the
+# same ETag and Cache-Control behaviour as the bulk dump endpoints.
+curl -i http://localhost:8000/api/institutions | head -5
+# HTTP/1.1 200 OK
+# etag: "v1-…"
+# cache-control: public, max-age=3600, stale-while-revalidate=86400
+
+# Fetch one institution profile with served-address coverage grouped by
+# street. Replay either institution route with If-None-Match: "<etag>"
+# to get a 304 Not Modified response when the snapshot is unchanged.
+curl -i http://localhost:8000/api/institutions/1 | head -20
+# HTTP/1.1 200 OK
+# etag: "v1-…"
+# cache-control: public, max-age=3600, stale-while-revalidate=86400
 
 # Run the ingest CLI: pulls snapshots/varna/latest.json from R2 and
 # upserts into Postgres in one transaction. Set the four R2_* env vars
@@ -125,6 +142,7 @@ src/yasli/
   routes/streets.py      # GET /api/streets (bulk dump + ETag/Cache-Control)
   routes/addresses.py    # GET /api/addresses (bulk dump + ETag/Cache-Control)
   routes/match.py        # GET /api/match (address_id -> institutions)
+  routes/institutions.py # GET /api/institutions + detail coverage
   models/                # Base + ORM classes (Institution, Street, Address) + address_institutions Table
   snapshot_contract/     # Vendored Pydantic Snapshot models (v1)
   ingest/                # python -m yasli.ingest pipeline
