@@ -18,12 +18,19 @@ the DB), `GET /api/streets` (the bulk dump of every Varna street row),
 `GET /api/institutions/{institution_id}` (institution profile coverage). The
 snapshot read endpoints carry strong content-derived `ETag` headers and
 hour-long `Cache-Control`.
-Alembic is at revision `0004` with the address-centric v2 schema
-(`institutions`, `streets`, `addresses`, `address_institutions` +
-`pg_trgm` trigram index on `streets.search_norm`). `institutions` also stores
-the v2 physical address, district code, and infant-group flag. The ingest CLI
-pulls the latest scraper snapshot from R2 and upserts streets, addresses,
-institutions, and address coverage edges into Postgres.
+Alembic is at revision `0005` with the address-centric v2 schema
+(`institutions`, `streets`, `addresses`, `address_institutions`,
+`grao_addresses` + `pg_trgm` trigram index on `streets.search_norm`).
+`institutions` carries the v2 physical address, district code, and
+infant-group flag; `addresses` carries the ГРАО-stamped `district_code`;
+`grao_addresses` holds the ГД ГРАО KADS reference rows loaded
+quarterly out-of-band. The weekly ingest CLI pulls the latest scraper
+snapshot from R2, upserts streets/addresses/institutions/coverage edges
+into Postgres, and runs both gated district-stamping passes (addresses
+then KG/PG institutions) after the upsert phase. An out-of-band CLI
+subcommand `python -m yasli.ingest restamp-districts` propagates ГРАО
+reassignments to previously-stamped rows after a quarterly KADS reload —
+see [`docs/OPERATIONS.md`](docs/OPERATIONS.md).
 
 ## Quickstart (local, Python)
 

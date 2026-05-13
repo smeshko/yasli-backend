@@ -18,7 +18,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from yasli.models import Base
-from yasli.models.types import KIND_VALUES, Kind
+from yasli.models.types import KIND_VALUES, DistrictCode, Kind
 
 if TYPE_CHECKING:
     from yasli.models.address import Address
@@ -44,7 +44,9 @@ class Institution(Base):
     kind: Mapped[Kind] = mapped_column(String(16), nullable=False)
     source_url: Mapped[str] = mapped_column(String(512), nullable=False)
     address: Mapped[str | None] = mapped_column(String(256), nullable=True)
-    district_code: Mapped[str | None] = mapped_column(String(2), nullable=True)
+    district_code: Mapped[DistrictCode | None] = mapped_column(
+        String(2), nullable=True
+    )
     has_infant_group: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,

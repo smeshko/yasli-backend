@@ -31,12 +31,18 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from yasli.db import get_engine
 from yasli.ingest import r2
+from yasli.ingest.district_stamp import (
+    AddressesStampSummary,
+    InstitutionsStampSummary,
+    stamp_addresses_unmatched,
+    stamp_institutions_unmatched,
+)
 from yasli.ingest.normalise import (
     UnknownLocality,
     parse_street,
@@ -79,10 +85,26 @@ class IngestSummary:
     institutions_disappeared: int = 0
     skipped_rows: int = 0
     address_null: int = 0
+    addresses_district_stamp: AddressesStampSummary = field(
+        default_factory=AddressesStampSummary
+    )
+    institutions_district_stamp: InstitutionsStampSummary = field(
+        default_factory=InstitutionsStampSummary
+    )
     elapsed_ms: int = 0
+
+    @property
+    def addresses_district_unstamped(self) -> int:
+        return self.addresses_district_stamp.remaining_null
+
+    @property
+    def institutions_district_unstamped(self) -> int:
+        return self.institutions_district_stamp.remaining_null
 
     def to_log_line(self) -> str:
         """Single-line, no embedded newlines, parseable by Railway log search."""
+        addr_stamp = self.addresses_district_stamp
+        inst_stamp = self.institutions_district_stamp
         return (
             "ingest done "
             f"snapshot={self.scraped_at.isoformat().replace('+00:00', 'Z')} "
@@ -100,6 +122,13 @@ class IngestSummary:
             f"unchanged:{self.address_institutions.unchanged}}} "
             f"address_null={self.address_null} "
             f"skipped_rows={self.skipped_rows} "
+            f"addresses_district_stamp={{primary:{addr_stamp.primary_stamped},"
+            f"fallback1:{addr_stamp.fallback1_stamped},"
+            f"fallback2:{addr_stamp.fallback2_stamped}}} "
+            f"addresses_district_unstamped={self.addresses_district_unstamped} "
+            f"institutions_district_stamp={{primary:{inst_stamp.primary_stamped},"
+            f"fallback:{inst_stamp.fallback_stamped}}} "
+            f"institutions_district_unstamped={self.institutions_district_unstamped} "
             f"elapsed_ms={self.elapsed_ms}"
         )
 
@@ -285,7 +314,14 @@ def _upsert_institutions(
             "name": stmt.excluded.name,
             "source_url": stmt.excluded.source_url,
             "address": stmt.excluded.address,
-            "district_code": stmt.excluded.district_code,
+            # Snapshot NULL means "backend-derived" for KG/PG. Preserve an
+            # existing district stamp so weekly ingest stays idempotent; the
+            # quarterly restamp command is the path that intentionally
+            # changes derived values. Nursery snapshots carry non-NULL API
+            # district codes, so those still update normally.
+            "district_code": func.coalesce(
+                stmt.excluded.district_code, Institution.district_code
+            ),
             "has_infant_group": stmt.excluded.has_infant_group,
             "last_seen_at": stmt.excluded.last_seen_at,
         },
@@ -303,11 +339,16 @@ def _upsert_institutions(
                 if r["external_id"] == key[0] and r["kind"] == key[1]
             )
             old = existing[key]
+            effective_district_code = (
+                new_row["district_code"]
+                if new_row["district_code"] is not None
+                else old.district_code
+            )
             if (
                 old.name == new_row["name"]
                 and old.source_url == new_row["source_url"]
                 and old.address == new_row["address"]
-                and old.district_code == new_row["district_code"]
+                and old.district_code == effective_district_code
                 and old.has_infant_group == new_row["has_infant_group"]
             ):
                 # Only `last_seen_at` was bumped — counts as unchanged for
@@ -584,6 +625,15 @@ def run(*, r2_client: Any | None = None) -> IngestSummary:
             )
             summary.address_institutions = _insert_address_institutions(
                 session, plan, inst_ids, address_ids
+            )
+            # District-stamping passes run in the same transaction so a
+            # snapshot ingest is atomic with respect to the stamping it
+            # implies. Order matters: addresses first (the institutions
+            # pass consults addresses.district_code via the catchment
+            # junction).
+            summary.addresses_district_stamp = stamp_addresses_unmatched(session)
+            summary.institutions_district_stamp = stamp_institutions_unmatched(
+                session
             )
         # After commit, count disappeared institutions.
         summary.institutions_disappeared = _count_disappeared(

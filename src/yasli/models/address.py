@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy import (
     BigInteger,
+    CheckConstraint,
     Column,
     ForeignKey,
     PrimaryKeyConstraint,
@@ -31,6 +32,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from yasli.models import Base
+from yasli.models.types import DistrictCode
 
 if TYPE_CHECKING:
     from yasli.models.institution import Institution
@@ -69,6 +71,10 @@ class Address(Base):
             "entrance",
             name="uq_addresses_natural",
         ),
+        CheckConstraint(
+            "district_code IS NULL OR district_code IN ('01','02','03','04','05')",
+            name="ck_addresses_district_code",
+        ),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
@@ -80,6 +86,9 @@ class Address(Base):
     number_int: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     number_suffix: Mapped[str | None] = mapped_column(String(2), nullable=True)
     entrance: Mapped[str | None] = mapped_column(String(4), nullable=True)
+    district_code: Mapped[DistrictCode | None] = mapped_column(
+        String(2), nullable=True
+    )
 
     institutions: Mapped[list["Institution"]] = relationship(
         "Institution",

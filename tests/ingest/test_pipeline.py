@@ -134,6 +134,14 @@ def test_idempotent_second_run(
             (r.street_id, r.number_int, r.number_suffix, r.entrance): r.id
             for r in s.execute(select(Address)).scalars()
         }
+        stamped_kindergarten = s.execute(
+            select(Institution).where(
+                Institution.external_id == "1002",
+                Institution.kind == "kindergarten",
+            )
+        ).scalar_one()
+        stamped_kindergarten.district_code = "02"
+        s.commit()
         first_edges = {
             (row.address_id, row.institution_id)
             for row in s.execute(
@@ -164,6 +172,13 @@ def test_idempotent_second_run(
         assert _count(s, Street) == EXPECTED_STREETS
         assert _count(s, Address) == EXPECTED_ADDRESSES
         assert _count(s, address_institutions) == EXPECTED_EDGES
+        preserved = s.execute(
+            select(Institution).where(
+                Institution.external_id == "1002",
+                Institution.kind == "kindergarten",
+            )
+        ).scalar_one()
+        assert preserved.district_code == "02"
 
     # Same composite keys → same surrogate ids on the rows.
     assert first_address_pks == second_address_pks

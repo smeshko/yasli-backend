@@ -50,18 +50,73 @@ def test_match_operation_declares_address_id_and_kind_parameters(openapi: dict[s
     assert _enum_values(openapi, kind["schema"]) == EXPECTED_KINDS
 
 
-def test_match_response_schema_has_exactly_five_fields(openapi: dict[str, Any]) -> None:
-    op = openapi["paths"]["/api/match"]["get"]
-    schema_ref = op["responses"]["200"]["content"]["application/json"]["schema"]
-    assert schema_ref["type"] == "array"
-    item_schema = _resolve_schema(openapi, schema_ref["items"])
+def _find_item_schema(openapi: dict[str, Any], shape_schema: dict[str, Any]) -> dict[str, Any]:
+    """Walk the response schema to locate the array-of-items shape.
 
+    The 200 response is now ``oneOf`` of a bare array and an envelope
+    object whose ``results`` is an array — both arrays carry the same
+    item shape. Either alternative is acceptable to extract from.
+    """
+    schema = _resolve_schema(openapi, shape_schema)
+    if schema.get("type") == "array":
+        return _resolve_schema(openapi, schema["items"])
+    if schema.get("type") == "object" and "results" in schema.get("properties", {}):
+        results = _resolve_schema(openapi, schema["properties"]["results"])
+        return _resolve_schema(openapi, results["items"])
+    for key in ("anyOf", "oneOf", "allOf"):
+        for alt in schema.get(key, []):
+            try:
+                return _find_item_schema(openapi, alt)
+            except AssertionError:
+                continue
+    raise AssertionError(f"could not find item schema in: {schema}")
+
+
+def test_match_response_is_oneof_array_or_envelope(openapi: dict[str, Any]) -> None:
+    op = openapi["paths"]["/api/match"]["get"]
+    schema = op["responses"]["200"]["content"]["application/json"]["schema"]
+    # Either the schema itself uses oneOf/anyOf, or it's already
+    # the array alternative — the resolver tolerates both.
+    found_array = False
+    found_envelope = False
+
+    def walk(node: dict[str, Any]) -> None:
+        nonlocal found_array, found_envelope
+        resolved = _resolve_schema(openapi, node)
+        if resolved.get("type") == "array":
+            found_array = True
+        if (
+            resolved.get("type") == "object"
+            and "results" in resolved.get("properties", {})
+            and "match_type" in resolved.get("properties", {})
+        ):
+            found_envelope = True
+        for key in ("anyOf", "oneOf", "allOf"):
+            for alt in resolved.get(key, []):
+                walk(alt)
+
+    walk(schema)
+    assert found_array, "missing array alternative in /api/match 200 schema"
+    assert found_envelope, "missing district_unknown envelope alternative"
+
+
+def test_match_item_schema_carries_six_fields_including_match_type(
+    openapi: dict[str, Any],
+) -> None:
+    op = openapi["paths"]["/api/match"]["get"]
+    schema = op["responses"]["200"]["content"]["application/json"]["schema"]
+    item_schema = _find_item_schema(openapi, schema)
     assert set(item_schema["properties"].keys()) == {
         "id",
         "external_id",
         "name",
         "kind",
         "source_url",
+        "match_type",
     }
     assert "search_norm" not in item_schema["properties"]
     assert _enum_values(openapi, item_schema["properties"]["kind"]) == EXPECTED_KINDS
+    assert _enum_values(openapi, item_schema["properties"]["match_type"]) == {
+        "street",
+        "district",
+    }

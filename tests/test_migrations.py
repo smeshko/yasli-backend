@@ -110,46 +110,59 @@ def test_round_trip_upgrade_downgrade_upgrade(fresh_db: str) -> None:
     up1 = _alembic(["upgrade", "head"], url)
     assert up1.returncode == 0, up1.stderr
     eng = _engine(url)
-    assert _current_revision(eng) == "0004"
+    assert _current_revision(eng) == "0005"
     tables = _table_names(eng)
     assert {
         "institutions",
         "streets",
         "addresses",
         "address_institutions",
+        "grao_addresses",
     }.issubset(tables)
     assert "address_entries" not in tables
+    # The addresses.district_code column is present at head.
+    addr_columns = {c["name"] for c in inspect(eng).get_columns("addresses")}
+    assert "district_code" in addr_columns
+    # The institutions.district_code column (from 0004) is also present.
+    inst_columns = {c["name"] for c in inspect(eng).get_columns("institutions")}
+    assert "district_code" in inst_columns
     eng.dispose()
 
     down = _alembic(["downgrade", "-1"], url)
     assert down.returncode == 0, down.stderr
     eng = _engine(url)
-    assert _current_revision(eng) == "0003"
+    assert _current_revision(eng) == "0004"
     tables = _table_names(eng)
-    # 0003 shape: address-centric tables remain, institution metadata gone.
+    # 0004 shape: address-centric tables remain, grao_addresses gone,
+    # addresses.district_code gone, but institutions.district_code (from
+    # 0004) MUST remain.
     assert {
         "institutions",
         "streets",
         "addresses",
         "address_institutions",
     }.issubset(tables)
-    assert "address_entries" not in tables
-    columns = {c["name"] for c in inspect(eng).get_columns("institutions")}
-    assert {"address", "district_code", "has_infant_group"}.isdisjoint(columns)
+    assert "grao_addresses" not in tables
+    addr_columns = {c["name"] for c in inspect(eng).get_columns("addresses")}
+    assert "district_code" not in addr_columns
+    inst_columns = {c["name"] for c in inspect(eng).get_columns("institutions")}
+    assert "district_code" in inst_columns  # survives the downgrade
     eng.dispose()
 
     up2 = _alembic(["upgrade", "head"], url)
     assert up2.returncode == 0, up2.stderr
     eng = _engine(url)
-    assert _current_revision(eng) == "0004"
+    assert _current_revision(eng) == "0005"
     tables = _table_names(eng)
     assert {
         "institutions",
         "streets",
         "addresses",
         "address_institutions",
+        "grao_addresses",
     }.issubset(tables)
-    assert "address_entries" not in tables
+    addr_columns = {c["name"] for c in inspect(eng).get_columns("addresses")}
+    assert "district_code" in addr_columns
     eng.dispose()
 
 
@@ -245,6 +258,167 @@ def test_addresses_columns_and_natural_unique(fresh_db: str) -> None:
     assert {"id", "street_id", "number_int", "number_suffix", "entrance"} <= columns
     constraint_names = {c[0] for c in constraints}
     assert "uq_addresses_natural" in constraint_names
+
+
+def test_grao_addresses_columns_and_constraints(fresh_db: str) -> None:
+    """grao_addresses (revision 0005): columns, PK, CHECK, and helper index."""
+    url = fresh_db
+    up = _alembic(["upgrade", "head"], url)
+    assert up.returncode == 0, up.stderr
+
+    eng = _engine(url)
+    with eng.connect() as conn:
+        cols = conn.execute(
+            text(
+                "SELECT column_name, is_nullable FROM information_schema.columns "
+                "WHERE table_name = 'grao_addresses'"
+            )
+        ).all()
+        constraints = conn.execute(
+            text(
+                "SELECT conname FROM pg_constraint "
+                "WHERE conrelid = 'grao_addresses'::regclass"
+            )
+        ).all()
+        indexes = conn.execute(
+            text(
+                "SELECT indexname FROM pg_indexes WHERE tablename = 'grao_addresses'"
+            )
+        ).all()
+    eng.dispose()
+
+    by_name = {row[0]: row for row in cols}
+    expected = {
+        "id",
+        "street_code",
+        "street_raw",
+        "search_norm",
+        "number_int",
+        "number_suffix",
+        "entrance",
+        "district_code",
+        "district_name",
+        "settlement_code",
+        "section_no",
+    }
+    assert expected.issubset(by_name.keys())
+    for col in expected:
+        assert by_name[col][1] == "NO", f"{col} should be NOT NULL"
+
+    constraint_names = {c[0] for c in constraints}
+    assert "grao_addresses_pkey" in constraint_names
+    assert "ck_grao_addresses_district_code" in constraint_names
+
+    index_names = {r[0] for r in indexes}
+    assert "ix_grao_addresses_search_norm_number_int" in index_names
+
+
+def test_addresses_district_code_column_and_check(fresh_db: str) -> None:
+    """addresses.district_code (revision 0005): nullable CHAR(2) with CHECK."""
+    url = fresh_db
+    up = _alembic(["upgrade", "head"], url)
+    assert up.returncode == 0, up.stderr
+
+    eng = _engine(url)
+    with eng.connect() as conn:
+        cols = conn.execute(
+            text(
+                "SELECT column_name, is_nullable FROM information_schema.columns "
+                "WHERE table_name = 'addresses' AND column_name = 'district_code'"
+            )
+        ).all()
+        constraints = conn.execute(
+            text(
+                "SELECT conname FROM pg_constraint "
+                "WHERE conrelid = 'addresses'::regclass"
+            )
+        ).all()
+    eng.dispose()
+
+    assert len(cols) == 1
+    assert cols[0][1] == "YES"  # nullable
+    constraint_names = {c[0] for c in constraints}
+    assert "ck_addresses_district_code" in constraint_names
+
+
+def test_grao_addresses_district_code_check_rejects_invalid(fresh_db: str) -> None:
+    """grao_addresses CHECK rejects district codes outside the 5-value set."""
+    url = fresh_db
+    up = _alembic(["upgrade", "head"], url)
+    assert up.returncode == 0, up.stderr
+
+    from sqlalchemy.exc import IntegrityError
+
+    eng = _engine(url)
+    try:
+        with eng.begin() as conn, pytest.raises(IntegrityError):
+            conn.execute(
+                text(
+                    "INSERT INTO grao_addresses "
+                    "(street_code, street_raw, search_norm, number_int, number_suffix, "
+                    " entrance, district_code, district_name, settlement_code, section_no) "
+                    "VALUES ('00001','УЛ.X','ul.x',1,'','','99','BAD','10135',1)"
+                )
+            )
+    finally:
+        eng.dispose()
+
+
+def test_grao_addresses_accepts_duplicate_source_tuples(fresh_db: str) -> None:
+    """Real KADS can repeat apparent street/number tuples across districts."""
+    url = fresh_db
+    up = _alembic(["upgrade", "head"], url)
+    assert up.returncode == 0, up.stderr
+
+    eng = _engine(url)
+    try:
+        with eng.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO grao_addresses "
+                    "(street_code, street_raw, search_norm, number_int, number_suffix, "
+                    " entrance, district_code, district_name, settlement_code, section_no) "
+                    "VALUES "
+                    "('00446','УЛ.АКАЦИЯ','gr.varna ul.akatsiya',2,'','','02','ПРИМОРСКИ','10135',96),"
+                    "('02751','УЛ.АКАЦИЯ','gr.varna ul.akatsiya',2,'','','05','АСПАРУХОВО','10135',400)"
+                )
+            )
+            count = conn.execute(
+                text("SELECT COUNT(*) FROM grao_addresses")
+            ).scalar_one()
+        assert count == 2
+    finally:
+        eng.dispose()
+
+
+def test_addresses_district_code_check_rejects_invalid(fresh_db: str) -> None:
+    """addresses.district_code CHECK rejects values outside the 5-value set."""
+    url = fresh_db
+    up = _alembic(["upgrade", "head"], url)
+    assert up.returncode == 0, up.stderr
+
+    from sqlalchemy.exc import IntegrityError
+
+    eng = _engine(url)
+    try:
+        with eng.begin() as conn:
+            street_id = conn.execute(
+                text(
+                    "INSERT INTO streets (city, raw_name, street_part, type_marker, "
+                    "search_norm) VALUES ('ГР.ВАРНА','UNIQ-DC','x',NULL,'x') "
+                    "RETURNING id"
+                )
+            ).scalar_one()
+        with eng.begin() as conn, pytest.raises(IntegrityError):
+            conn.execute(
+                text(
+                    "INSERT INTO addresses (street_id, number_int, district_code) "
+                    "VALUES (:s, 1, '99')"
+                ),
+                {"s": street_id},
+            )
+    finally:
+        eng.dispose()
 
 
 def test_address_institutions_lookup_index_present(fresh_db: str) -> None:
