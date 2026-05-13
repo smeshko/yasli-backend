@@ -1,6 +1,6 @@
 """ORM smoke tests — no database required.
 
-Asserts the v1 tables are registered on `Base.metadata` and that
+Asserts the v2 tables are registered on `Base.metadata` and that
 `Institution.kind` is annotated with the closed `Literal` set that matches
 the database CHECK constraint.
 """
@@ -13,7 +13,7 @@ from yasli.models import Address, Base, Institution, Street, address_institution
 from yasli.models.types import KIND_VALUES
 
 
-def test_metadata_registers_v1_tables() -> None:
+def test_metadata_registers_v2_tables() -> None:
     tables = set(Base.metadata.tables.keys())
     assert {
         "institutions",
@@ -44,3 +44,10 @@ def test_institution_kind_literal_matches_check_constraint() -> None:
     assert len(inner_args) == 1, kind_type
     literal_args = typing.get_args(inner_args[0])
     assert set(literal_args) == set(KIND_VALUES)
+
+
+def test_institution_metadata_columns_registered() -> None:
+    columns = Institution.__table__.c
+    assert columns.address.nullable is True
+    assert columns.district_code.nullable is True
+    assert columns.has_infant_group.nullable is False

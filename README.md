@@ -18,11 +18,12 @@ the DB), `GET /api/streets` (the bulk dump of every Varna street row),
 `GET /api/institutions/{institution_id}` (institution profile coverage). The
 snapshot read endpoints carry strong content-derived `ETag` headers and
 hour-long `Cache-Control`.
-Alembic is at revision `0003` with the address-centric v1 schema
+Alembic is at revision `0004` with the address-centric v2 schema
 (`institutions`, `streets`, `addresses`, `address_institutions` +
-`pg_trgm` trigram index on `streets.search_norm`). The ingest CLI pulls the
-latest scraper snapshot from R2 and upserts streets, addresses, institutions,
-and address coverage edges into Postgres.
+`pg_trgm` trigram index on `streets.search_norm`). `institutions` also stores
+the v2 physical address, district code, and infant-group flag. The ingest CLI
+pulls the latest scraper snapshot from R2 and upserts streets, addresses,
+institutions, and address coverage edges into Postgres.
 
 ## Quickstart (local, Python)
 
@@ -39,9 +40,9 @@ docker run --rm -e POSTGRES_PASSWORD=dev -p 5432:5432 postgres:16
 # Point the backend at it
 export DATABASE_URL=postgres://postgres:dev@localhost:5432/postgres
 
-# Run the migrations — creates the pg_trgm extension, the four v1
+# Run the migrations — creates the pg_trgm extension, the four v2
 # tables (institutions, streets, addresses, address_institutions) and
-# their indexes
+# their indexes, including institution metadata columns
 alembic upgrade head
 
 # Serve the API
@@ -98,10 +99,10 @@ python -m yasli.ingest
 # → ingest done snapshot=… institutions={inserted:N,updated:0,…} \
 #   streets={inserted:M,…} addresses={inserted:A,…} \
 #   address_institutions={inserted:E,unchanged:0} \
-#   skipped_rows=0 elapsed_ms=…
+#   address_null=K skipped_rows=0 elapsed_ms=…
 # First run against a fresh DB is roughly 30–90 s for the production
-# snapshot (~70 institutions, ~2.3k streets, ~49k addresses, ~236k
-# coverage edges). Subsequent runs are faster (mostly no-op upserts).
+# snapshot (12 nurseries, about 52 kindergartens, and 12 preschools).
+# Subsequent runs are faster (mostly no-op upserts).
 
 # Run tests. Migration and constraint tests need a Postgres URL —
 # point YASLI_TEST_DATABASE_URL at a throwaway DB; otherwise they skip.
@@ -118,13 +119,16 @@ internally.
 
 ## Required environment variables
 
-The web service (`uvicorn yasli.main:app`) needs only `DATABASE_URL`.
-The ingest CLI (`python -m yasli.ingest`) additionally needs the four
-`R2_*` variables — they're validated at startup before any network call.
+The web service (`uvicorn yasli.main:app`) needs `DATABASE_URL`.
+Browser clients also need `CORS_ALLOWED_ORIGINS` set to the exact frontend
+origins allowed to call the API. The ingest CLI (`python -m yasli.ingest`)
+additionally needs the four `R2_*` variables — they're validated at startup
+before any network call.
 
 | Variable                | Used by               | Purpose                                                        |
 | ----------------------- | --------------------- | -------------------------------------------------------------- |
 | `DATABASE_URL`          | web + ingest          | Postgres connection URL. Both `postgres://` and `postgresql+psycopg://` accepted. |
+| `CORS_ALLOWED_ORIGINS`  | web                   | Comma-separated exact browser origins allowed to call the API, e.g. `http://localhost:4321,https://example.com`. |
 | `R2_ACCOUNT_ID`         | ingest                | Cloudflare R2 account id (constructs the endpoint URL).        |
 | `R2_ACCESS_KEY_ID`      | ingest                | Read-only R2 access key id.                                    |
 | `R2_SECRET_ACCESS_KEY`  | ingest                | Read-only R2 access key secret.                                |
@@ -144,7 +148,7 @@ src/yasli/
   routes/match.py        # GET /api/match (address_id -> institutions)
   routes/institutions.py # GET /api/institutions + detail coverage
   models/                # Base + ORM classes (Institution, Street, Address) + address_institutions Table
-  snapshot_contract/     # Vendored Pydantic Snapshot models (v1)
+  snapshot_contract/     # Vendored Pydantic Snapshot models (v2)
   ingest/                # python -m yasli.ingest pipeline
     __main__.py          # CLI entrypoint (argparse, exit-code mapping)
     pipeline.py          # fetch → validate → parse → upsert → log

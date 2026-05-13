@@ -78,6 +78,7 @@ class IngestSummary:
     address_institutions: TableCounts = field(default_factory=TableCounts)
     institutions_disappeared: int = 0
     skipped_rows: int = 0
+    address_null: int = 0
     elapsed_ms: int = 0
 
     def to_log_line(self) -> str:
@@ -97,6 +98,7 @@ class IngestSummary:
             f"unchanged:{self.addresses.unchanged}}} "
             f"address_institutions={{inserted:{self.address_institutions.inserted},"
             f"unchanged:{self.address_institutions.unchanged}}} "
+            f"address_null={self.address_null} "
             f"skipped_rows={self.skipped_rows} "
             f"elapsed_ms={self.elapsed_ms}"
         )
@@ -112,6 +114,11 @@ class _IngestPlan:
     addresses: list[dict[str, Any]]
     coverage_edges: list[tuple[AddressKey, InstitutionKey]]
     skipped_rows: int
+    address_null: int
+
+
+class UnsupportedSnapshotVersion(ValueError):
+    """Raised when R2 contains a snapshot version this ingest cannot read."""
 
 
 def _chunked(rows: list[dict[str, Any]], size: int = _CHUNK_SIZE) -> Iterator[list[dict[str, Any]]]:
@@ -136,6 +143,10 @@ def _validate_snapshot(body: bytes) -> Snapshot:
     caller; the CLI catches them and prints to stderr.
     """
     payload = json.loads(body)
+    if isinstance(payload, dict) and "schema_version" in payload and payload["schema_version"] != 2:
+        raise UnsupportedSnapshotVersion(
+            f"unsupported snapshot schema_version {payload['schema_version']!r}; expected 2"
+        )
     return Snapshot.model_validate(payload)
 
 
@@ -154,14 +165,20 @@ def _build_plan(snapshot: Snapshot) -> _IngestPlan:
     edge_set: set[tuple[AddressKey, InstitutionKey]] = set()
     edges: list[tuple[AddressKey, InstitutionKey]] = []
     skipped = 0
+    address_null = 0
 
     for inst in snapshot.institutions:
+        if inst.address is None:
+            address_null += 1
         inst_key: InstitutionKey = (inst.external_id, inst.kind)
         inst_rows[inst_key] = {
             "external_id": inst.external_id,
             "name": inst.name,
             "kind": inst.kind,
             "source_url": str(inst.source_url),
+            "address": inst.address,
+            "district_code": inst.district_code,
+            "has_infant_group": inst.has_infant_group,
             "last_seen_at": snapshot.scraped_at,
         }
 
@@ -225,6 +242,7 @@ def _build_plan(snapshot: Snapshot) -> _IngestPlan:
         addresses=list(address_rows.values()),
         coverage_edges=edges,
         skipped_rows=skipped,
+        address_null=address_null,
     )
 
 
@@ -266,6 +284,9 @@ def _upsert_institutions(
         set_={
             "name": stmt.excluded.name,
             "source_url": stmt.excluded.source_url,
+            "address": stmt.excluded.address,
+            "district_code": stmt.excluded.district_code,
+            "has_infant_group": stmt.excluded.has_infant_group,
             "last_seen_at": stmt.excluded.last_seen_at,
         },
     ).returning(Institution.id, Institution.external_id, Institution.kind)
@@ -285,6 +306,9 @@ def _upsert_institutions(
             if (
                 old.name == new_row["name"]
                 and old.source_url == new_row["source_url"]
+                and old.address == new_row["address"]
+                and old.district_code == new_row["district_code"]
+                and old.has_infant_group == new_row["has_infant_group"]
             ):
                 # Only `last_seen_at` was bumped — counts as unchanged for
                 # operator-readable summary purposes.
@@ -547,6 +571,7 @@ def run(*, r2_client: Any | None = None) -> IngestSummary:
     summary = IngestSummary(
         scraped_at=snapshot.scraped_at,
         skipped_rows=plan.skipped_rows,
+        address_null=plan.address_null,
     )
 
     engine = get_engine()

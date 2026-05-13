@@ -18,17 +18,20 @@ from sqlalchemy.orm import Session
 from yasli.ingest import pipeline
 from yasli.models import Address, Institution, Street, address_institutions
 
-FIXTURE_PATH = Path(__file__).parent / "fixtures" / "snapshot_v1_minimal.json"
+FIXTURE_PATH = Path(__file__).parent / "fixtures" / "snapshot_v2_minimal.json"
+V1_FIXTURE_PATH = Path(__file__).parent / "fixtures" / "snapshot_v1_minimal.json"
 BUCKET = "yasli-snapshots"
 KEY = "snapshots/varna/latest.json"
 
-# The minimal fixture has 3 institutions, 5 streets, 8 distinct addresses,
+# The minimal fixture has 4 institutions, 5 streets, 8 distinct addresses,
 # and 9 coverage edges (one address — VV 85 — is covered by both the
-# nursery 1001 and the preschool 1003).
-EXPECTED_INSTITUTIONS = 3
+# kindergarten 1004 and the preschool 1003). The standalone nursery has no
+# catchment rows.
+EXPECTED_INSTITUTIONS = 4
 EXPECTED_STREETS = 5
 EXPECTED_ADDRESSES = 8
 EXPECTED_EDGES = 9
+EXPECTED_ADDRESS_NULL = 1
 
 
 @pytest.fixture
@@ -82,7 +85,39 @@ def test_first_run_loads_all(
     assert summary.addresses.inserted == EXPECTED_ADDRESSES
     assert summary.address_institutions.inserted == EXPECTED_EDGES
     assert summary.skipped_rows == 0
+    assert summary.address_null == EXPECTED_ADDRESS_NULL
     assert summary.institutions_disappeared == 0
+
+
+@mock_aws
+def test_institution_metadata_is_persisted(
+    engine: Engine, r2_env: dict[str, str], snapshot_dict: dict[str, Any]
+) -> None:
+    s3 = boto3.client("s3", region_name="us-east-1")
+    _put_snapshot(s3, snapshot_dict)
+
+    pipeline.run(r2_client=s3)
+
+    with Session(engine) as s:
+        nursery = s.execute(
+            select(Institution).where(Institution.external_id == "1001")
+        ).scalar_one()
+        assert nursery.kind == "nursery"
+        assert nursery.address == "ул. Морска 1"
+        assert nursery.district_code == "01"
+        assert nursery.has_infant_group is False
+
+        kindergarten = s.execute(
+            select(Institution).where(Institution.external_id == "1002")
+        ).scalar_one()
+        assert kindergarten.address == "ул. Слънце 2"
+        assert kindergarten.district_code is None
+        assert kindergarten.has_infant_group is True
+
+        null_address = s.execute(
+            select(Institution).where(Institution.external_id == "1003")
+        ).scalar_one()
+        assert null_address.address is None
 
 
 @mock_aws
@@ -140,6 +175,7 @@ def test_idempotent_second_run(
     assert summary2.addresses.unchanged == EXPECTED_ADDRESSES
     assert summary2.address_institutions.inserted == 0
     assert summary2.address_institutions.unchanged == EXPECTED_EDGES
+    assert summary2.address_null == EXPECTED_ADDRESS_NULL
 
 
 @mock_aws
@@ -155,11 +191,11 @@ def test_updated_institution_name(
             select(Institution).where(Institution.external_id == "1001")
         ).scalar_one()
         original_id = original.id
-        assert original.name == "ОДЗ Море"
+        assert original.name == "ДЯ Море"
 
     bumped = deepcopy(snapshot_dict)
     bumped["scraped_at"] = "2026-05-11T01:00:00Z"
-    bumped["institutions"][0]["name"] = "ОДЗ Море (renamed)"
+    bumped["institutions"][0]["name"] = "ДЯ Море (renamed)"
     s3.put_object(
         Bucket=BUCKET, Key=KEY, Body=json.dumps(bumped).encode("utf-8")
     )
@@ -171,7 +207,35 @@ def test_updated_institution_name(
             select(Institution).where(Institution.external_id == "1001")
         ).scalar_one()
         assert renamed.id == original_id
-        assert renamed.name == "ОДЗ Море (renamed)"
+        assert renamed.name == "ДЯ Море (renamed)"
+
+    assert summary.institutions.updated >= 1
+
+
+@mock_aws
+def test_updated_institution_metadata_counts_updated(
+    engine: Engine, r2_env: dict[str, str], snapshot_dict: dict[str, Any]
+) -> None:
+    s3 = boto3.client("s3", region_name="us-east-1")
+    _put_snapshot(s3, snapshot_dict)
+    pipeline.run(r2_client=s3)
+
+    bumped = deepcopy(snapshot_dict)
+    bumped["scraped_at"] = "2026-05-11T01:00:00Z"
+    bumped["institutions"][1]["address"] = "ул. Слънце 22"
+    bumped["institutions"][1]["has_infant_group"] = False
+    s3.put_object(
+        Bucket=BUCKET, Key=KEY, Body=json.dumps(bumped).encode("utf-8")
+    )
+
+    summary = pipeline.run(r2_client=s3)
+
+    with Session(engine) as s:
+        row = s.execute(
+            select(Institution).where(Institution.external_id == "1002")
+        ).scalar_one()
+        assert row.address == "ул. Слънце 22"
+        assert row.has_infant_group is False
 
     assert summary.institutions.updated >= 1
 
@@ -277,12 +341,28 @@ def test_unknown_schema_version_aborts(
     s3 = boto3.client("s3", region_name="us-east-1")
     s3.create_bucket(Bucket=BUCKET)
     bad = deepcopy(snapshot_dict)
-    bad["schema_version"] = 2
+    bad["schema_version"] = 3
     s3.put_object(
         Bucket=BUCKET, Key=KEY, Body=json.dumps(bad).encode("utf-8")
     )
 
-    with pytest.raises(Exception):
+    with pytest.raises(pipeline.UnsupportedSnapshotVersion, match="schema_version"):
+        pipeline.run(r2_client=s3)
+
+    with Session(engine) as s:
+        assert _count(s, Institution) == 0
+
+
+@mock_aws
+def test_v1_schema_version_aborts(engine: Engine, r2_env: dict[str, str]) -> None:
+    s3 = boto3.client("s3", region_name="us-east-1")
+    s3.create_bucket(Bucket=BUCKET)
+    payload = json.loads(V1_FIXTURE_PATH.read_text(encoding="utf-8"))
+    s3.put_object(
+        Bucket=BUCKET, Key=KEY, Body=json.dumps(payload).encode("utf-8")
+    )
+
+    with pytest.raises(pipeline.UnsupportedSnapshotVersion, match="expected 2"):
         pipeline.run(r2_client=s3)
 
     with Session(engine) as s:
@@ -364,6 +444,9 @@ def test_chunked_inserts_handle_large_batch(
             "name": f"Inst {i}",
             "kind": "kindergarten",
             "source_url": f"https://example.test/inst/{i}",
+            "address": f"ул. Синтетична {i}",
+            "district_code": None,
+            "has_infant_group": False,
             "last_seen_at": datetime(2026, 5, 4, tzinfo=timezone.utc),
         }
         for i in range(2)
@@ -408,7 +491,7 @@ def test_chunked_inserts_handle_large_batch(
     assert len(coverage_edges) == edge_count
 
     snapshot_payload = {
-        "schema_version": 1,
+        "schema_version": 2,
         "scraped_at": "2026-05-04T01:00:00Z",
         "city": "varna",
         "institutions": [],
@@ -422,6 +505,7 @@ def test_chunked_inserts_handle_large_batch(
         addresses=addresses,
         coverage_edges=coverage_edges,
         skipped_rows=0,
+        address_null=0,
     )
 
     with Session(engine) as session:

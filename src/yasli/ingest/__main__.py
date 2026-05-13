@@ -49,6 +49,9 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         summary = pipeline.run()
+    except pipeline.UnsupportedSnapshotVersion as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 3
     except ValidationError as exc:
         print(f"error: snapshot failed validation: {exc}", file=sys.stderr)
         return 3

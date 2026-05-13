@@ -76,11 +76,20 @@ def head_db() -> str:
     return _url
 
 
-def _insert_institution(conn, *, external_id: str, kind: str, name: str = "X") -> int:
+def _insert_institution(
+    conn,
+    *,
+    external_id: str,
+    kind: str,
+    name: str = "X",
+    address: str | None = None,
+    district_code: str | None = None,
+) -> int:
     row = conn.execute(
         text(
-            "INSERT INTO institutions (external_id, name, kind, source_url, last_seen_at) "
-            "VALUES (:external_id, :name, :kind, :source_url, :last_seen_at) "
+            "INSERT INTO institutions "
+            "(external_id, name, kind, source_url, address, district_code, last_seen_at) "
+            "VALUES (:external_id, :name, :kind, :source_url, :address, :district_code, :last_seen_at) "
             "RETURNING id"
         ),
         {
@@ -88,6 +97,8 @@ def _insert_institution(conn, *, external_id: str, kind: str, name: str = "X") -
             "name": name,
             "kind": kind,
             "source_url": "https://example.test/x",
+            "address": address,
+            "district_code": district_code,
             "last_seen_at": datetime.now(tz=timezone.utc),
         },
     ).scalar_one()
@@ -149,12 +160,64 @@ def test_kind_check_rejects_old_source_value(head_db: str) -> None:
         engine.dispose()
 
 
-def test_kind_check_accepts_v1_values(head_db: str) -> None:
+def test_kind_check_accepts_contract_values(head_db: str) -> None:
     engine = create_engine(head_db, future=True)
     try:
         with engine.begin() as conn:
             for k in ("nursery", "kindergarten", "preschool"):
                 _insert_institution(conn, external_id=f"v-{k}", kind=k)
+    finally:
+        engine.dispose()
+
+
+def test_district_code_check_rejects_invalid_value(head_db: str) -> None:
+    engine = create_engine(head_db, future=True)
+    try:
+        with engine.begin() as conn, pytest.raises(IntegrityError):
+            _insert_institution(
+                conn,
+                external_id="bad-district",
+                kind="nursery",
+                district_code="06",
+            )
+    finally:
+        engine.dispose()
+
+
+def test_district_code_check_accepts_valid_and_null_values(head_db: str) -> None:
+    engine = create_engine(head_db, future=True)
+    try:
+        with engine.begin() as conn:
+            _insert_institution(
+                conn,
+                external_id="valid-district",
+                kind="nursery",
+                district_code="01",
+            )
+            _insert_institution(
+                conn,
+                external_id="null-district",
+                kind="kindergarten",
+                district_code=None,
+            )
+    finally:
+        engine.dispose()
+
+
+def test_has_infant_group_defaults_false(head_db: str) -> None:
+    engine = create_engine(head_db, future=True)
+    try:
+        with engine.begin() as conn:
+            inst_id = _insert_institution(
+                conn,
+                external_id="default-infant-flag",
+                kind="kindergarten",
+            )
+            value = conn.execute(
+                text("SELECT has_infant_group FROM institutions WHERE id = :id"),
+                {"id": inst_id},
+            ).scalar_one()
+            assert value is False
     finally:
         engine.dispose()
 

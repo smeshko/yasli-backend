@@ -1,0 +1,144 @@
+{
+  "$defs": {
+    "AddressEntry": {
+      "additionalProperties": false,
+      "description": "One street/number row attached to an institution.\n\nBoth fields are preserved verbatim from the source — the scraper does not\ncanonicalise. Normalisation is the backend's job during ingest.",
+      "properties": {
+        "number": {
+          "minLength": 1,
+          "title": "Number",
+          "type": "string"
+        },
+        "street": {
+          "minLength": 1,
+          "title": "Street",
+          "type": "string"
+        }
+      },
+      "required": [
+        "street",
+        "number"
+      ],
+      "title": "AddressEntry",
+      "type": "object"
+    },
+    "Institution": {
+      "additionalProperties": false,
+      "description": "One municipal institution (nursery / kindergarten / preschool).",
+      "properties": {
+        "address": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Address"
+        },
+        "address_entries": {
+          "items": {
+            "$ref": "#/$defs/AddressEntry"
+          },
+          "title": "Address Entries",
+          "type": "array"
+        },
+        "district_code": {
+          "anyOf": [
+            {
+              "enum": [
+                "01",
+                "02",
+                "03",
+                "04",
+                "05"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "District Code"
+        },
+        "external_id": {
+          "minLength": 1,
+          "title": "External Id",
+          "type": "string"
+        },
+        "has_infant_group": {
+          "title": "Has Infant Group",
+          "type": "boolean"
+        },
+        "kind": {
+          "enum": [
+            "nursery",
+            "kindergarten",
+            "preschool"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "source_url": {
+          "format": "uri",
+          "maxLength": 2083,
+          "minLength": 1,
+          "title": "Source Url",
+          "type": "string"
+        }
+      },
+      "required": [
+        "external_id",
+        "name",
+        "kind",
+        "source_url",
+        "address_entries",
+        "has_infant_group"
+      ],
+      "title": "Institution",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "The top-level v2 snapshot envelope written to R2.",
+  "properties": {
+    "city": {
+      "minLength": 1,
+      "title": "City",
+      "type": "string"
+    },
+    "institutions": {
+      "items": {
+        "$ref": "#/$defs/Institution"
+      },
+      "title": "Institutions",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": 2,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "scraped_at": {
+      "format": "date-time",
+      "title": "Scraped At",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "scraped_at",
+    "city",
+    "institutions"
+  ],
+  "title": "Snapshot",
+  "type": "object"
+}

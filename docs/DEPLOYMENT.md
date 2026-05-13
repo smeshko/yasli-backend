@@ -73,6 +73,9 @@ endpoints).
    - **Value:** `${{Postgres.DATABASE_URL}}` — Railway recognises this
      as a reference to the Postgres plugin you added above. The web UI
      shows the resolved value once you save.
+   - **Name:** `CORS_ALLOWED_ORIGINS`
+   - **Value:** comma-separated exact browser origins allowed to call the
+     API, for example `http://localhost:4321,https://<frontend>.pages.dev`.
 4. **Redeploy** so the service picks up the start command and env var.
    Wait for the build + deploy to go green.
 
@@ -81,10 +84,11 @@ endpoints).
 ## `backend-ingest` service
 
 A cron service that shares the same image as `backend-api` but runs
-`python -m yasli.ingest`. As of s06 this is the real ingest pipeline:
-on every cron firing it pulls `snapshots/varna/latest.json` from R2,
-validates it against the v1 contract, and upserts institutions /
-streets / address entries into Postgres in a single transaction.
+`python -m yasli.ingest`. As of `add-nursery-ingest` this is the real
+ingest pipeline: on every cron firing it pulls
+`snapshots/varna/latest.json` from R2, validates it against the v2
+contract, and upserts institution metadata, streets, addresses, and
+coverage links into Postgres in a single transaction.
 
 1. From the `yasli` project view, click **+ New** → **Deploy from GitHub
    repo** and select the **same** `smeshko/yasli-backend` repo. Railway
@@ -150,6 +154,12 @@ recreate is safe; the new tables are populated by re-running
 `backend-ingest` after the migration. The downgrade drops the new
 tables and recreates `address_entries` empty.
 
+**Nursery ingest deploy: revision `0004_nursery_metadata`.** Running
+`alembic upgrade head` after this change advances the DB from `0003` to
+`0004`, adding `institutions.address`, `institutions.district_code`, and
+`institutions.has_infant_group`. This backend deploy is v2-only: v1
+snapshots are rejected before any database writes.
+
 Two ways to run it on Railway:
 
 1. **One-off run command (recommended for this change).** From the
@@ -188,10 +198,10 @@ Before relying on either service, prove the pipeline works.
    triggers a one-shot run). Open the resulting deployment's logs.
    Expected:
    - A single structured summary line, e.g.
-     `ingest done snapshot=2026-05-04T01:00:00Z institutions={inserted:N,updated:0,unchanged:0,disappeared:0} streets={inserted:M,updated:0,unchanged:0} addresses={inserted:A,updated:0,unchanged:0} address_institutions={inserted:E,unchanged:0} skipped_rows=0 elapsed_ms=…`
-     For Varna's snapshot, expect roughly `~70` institutions, `~2.3k`
-     streets, `~49k` addresses, and `~236k` coverage edges on the first
-     run; second-run counts move to the `unchanged` columns.
+     `ingest done snapshot=2026-05-04T01:00:00Z institutions={inserted:N,updated:0,unchanged:0,disappeared:0} streets={inserted:M,updated:0,unchanged:0} addresses={inserted:A,updated:0,unchanged:0} address_institutions={inserted:E,unchanged:0} address_null=K skipped_rows=0 elapsed_ms=…`
+     For Varna's v2 snapshot, expect **12** nurseries, about **52**
+     kindergartens (18 with `has_infant_group=true`), and **12**
+     preschools. Second-run counts move to the `unchanged` columns.
    - Exit code 0 ("Exited with code 0" in the dashboard).
    - Re-running immediately should report `inserted:0` for every
      table and a non-zero `unchanged` count — that's the idempotency
@@ -199,10 +209,11 @@ Before relying on either service, prove the pipeline works.
 3. **Postgres.** Open the Postgres plugin → **Data** tab → confirm an
    `alembic_version` table exists with a single row whose `version_num`
    matches the current head (`0001` after s04, `0002` after s05,
-   `0003` after the address-centric restructure). After `0003`,
+   `0003` after the address-centric restructure, `0004` after
+   `add-nursery-ingest`). After `0004`,
    `institutions`, `streets`, `addresses`, and `address_institutions`
-   exist and `address_entries` is gone; the four tables are empty
-   until `backend-ingest` runs.
+   exist, `address_entries` is gone, and `institutions` has `address`,
+   `district_code`, and `has_infant_group`.
 
 If all three are green, the backend is wired end-to-end. Subsequent
 changes (s05–s09) will only add behaviour — no further Railway setup.
@@ -235,6 +246,33 @@ by reusing the scraper's read+write key.
 `0 2 * * 0` (UTC) — every Sunday at 02:00 UTC, one hour after the
 scraper writes the new `latest.json` at 01:00 UTC.
 
+### Nursery ingest v2 rollout
+
+`add-nursery-ingest` intentionally uses a truncate-and-reingest rollout.
+That is valid because the database currently contains only source-derived
+data and no user-generated rows. A future change that introduces user data
+must use in-place UPDATE migrations instead of truncating tables.
+
+Recommended deploy order:
+
+1. Take a backup with `pg_dump`.
+2. Pause the weekly scraper and backend-ingest cron services.
+3. Deploy the backend containing v2-only ingest code.
+4. Run `alembic upgrade head`; the database head should become `0004`.
+5. Truncate source-derived data:
+   ```sql
+   TRUNCATE institutions, streets, addresses RESTART IDENTITY CASCADE;
+   ```
+6. Deploy the scraper containing snapshot v2.
+7. Trigger a scraper run, then trigger a backend ingest run.
+8. Verify counts: 12 standalone nurseries with non-null `district_code`,
+   about 52 kindergartens of which 18 have `has_infant_group=true`, and
+   12 preschools.
+9. Resume the weekly cron services.
+
+This change does not alter `/api/match`; district-based nursery routing
+remains blocked until `add-grao-district-routing` lands.
+
 ### Manual run procedure
 
 1. **Railway dashboard** → `backend-ingest` service → **Deployments** →
@@ -242,7 +280,7 @@ scraper writes the new `latest.json` at 01:00 UTC.
 2. **Logs** tab on the resulting deployment.
 3. Expect a single line beginning with `ingest done snapshot=…` and an
    exit code of 0. The line includes counts per table (inserted /
-   updated / unchanged / disappeared) and `elapsed_ms`.
+   updated / unchanged / disappeared), `address_null`, and `elapsed_ms`.
 
 If the run exits non-zero, the most common causes are:
 
@@ -250,8 +288,8 @@ If the run exits non-zero, the most common causes are:
   in Variables and redeploy.
 - **R2 returned 403** → the access key isn't scoped to
   `yasli-snapshots`; reissue from Cloudflare with the right scope.
-- **`pydantic.ValidationError`** → the snapshot violates the v1
-  contract. Compare with `yasli/scraper/schemas/snapshot.v1.schema.json`
+- **`pydantic.ValidationError`** → the snapshot violates the v2
+  contract. Compare with `yasli/scraper/schemas/snapshot.v2.schema.json`
   and check the scraper's most recent run.
 - **`SQLAlchemyError` / DB connection refused** → Postgres plugin is
   unhealthy or the `DATABASE_URL` reference broke. Verify in the

@@ -14,6 +14,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 from contextlib import redirect_stdout
 from pathlib import Path
 from typing import Any
@@ -22,7 +23,7 @@ import boto3
 from moto import mock_aws
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-FIXTURE_PATH = Path(__file__).parent / "fixtures" / "snapshot_v1_minimal.json"
+FIXTURE_PATH = Path(__file__).parent / "fixtures" / "snapshot_v2_minimal.json"
 BUCKET = "yasli-snapshots"
 KEY = "snapshots/varna/latest.json"
 
@@ -35,13 +36,16 @@ def _run_cli(env_extra: dict[str, str], args: list[str]) -> subprocess.Completed
     env.update(env_extra)
     src = str(REPO_ROOT / "src")
     env["PYTHONPATH"] = src + os.pathsep + env.get("PYTHONPATH", "")
-    return subprocess.run(
-        [sys.executable, "-m", "yasli.ingest", *args],
-        cwd=REPO_ROOT,
-        env=env,
-        capture_output=True,
-        text=True,
-    )
+    with tempfile.TemporaryDirectory() as tmp:
+        workdir = Path(tmp) / "backend"
+        workdir.mkdir()
+        return subprocess.run(
+            [sys.executable, "-m", "yasli.ingest", *args],
+            cwd=workdir,
+            env=env,
+            capture_output=True,
+            text=True,
+        )
 
 
 def test_missing_database_url() -> None:
@@ -119,6 +123,7 @@ def test_summary_line_format(
         "streets={inserted:",
         "addresses={inserted:",
         "address_institutions={inserted:",
+        "address_null=",
         "skipped_rows=",
         "elapsed_ms=",
     ):

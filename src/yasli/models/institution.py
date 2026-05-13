@@ -1,12 +1,20 @@
 """`institutions` table — one row per (external_id, kind) bucket from the
-`snapshot.v1.json` contract."""
+`snapshot.v2.json` contract."""
 
 from __future__ import annotations
 
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import BigInteger, CheckConstraint, DateTime, String, UniqueConstraint
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    String,
+    UniqueConstraint,
+    false,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from yasli.models import Base
@@ -24,6 +32,10 @@ class Institution(Base):
             "kind IN ('" + "','".join(KIND_VALUES) + "')",
             name="ck_institutions_kind",
         ),
+        CheckConstraint(
+            "district_code IS NULL OR district_code IN ('01','02','03','04','05')",
+            name="ck_institutions_district_code",
+        ),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
@@ -31,6 +43,14 @@ class Institution(Base):
     name: Mapped[str] = mapped_column(String(256), nullable=False)
     kind: Mapped[Kind] = mapped_column(String(16), nullable=False)
     source_url: Mapped[str] = mapped_column(String(512), nullable=False)
+    address: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    district_code: Mapped[str | None] = mapped_column(String(2), nullable=True)
+    has_infant_group: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=false(),
+    )
     last_seen_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )

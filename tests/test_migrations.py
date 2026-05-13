@@ -110,7 +110,7 @@ def test_round_trip_upgrade_downgrade_upgrade(fresh_db: str) -> None:
     up1 = _alembic(["upgrade", "head"], url)
     assert up1.returncode == 0, up1.stderr
     eng = _engine(url)
-    assert _current_revision(eng) == "0003"
+    assert _current_revision(eng) == "0004"
     tables = _table_names(eng)
     assert {
         "institutions",
@@ -124,18 +124,24 @@ def test_round_trip_upgrade_downgrade_upgrade(fresh_db: str) -> None:
     down = _alembic(["downgrade", "-1"], url)
     assert down.returncode == 0, down.stderr
     eng = _engine(url)
-    assert _current_revision(eng) == "0002"
+    assert _current_revision(eng) == "0003"
     tables = _table_names(eng)
-    # 0002 shape: institutions/streets/address_entries; new tables gone.
-    assert {"institutions", "streets", "address_entries"}.issubset(tables)
-    assert "addresses" not in tables
-    assert "address_institutions" not in tables
+    # 0003 shape: address-centric tables remain, institution metadata gone.
+    assert {
+        "institutions",
+        "streets",
+        "addresses",
+        "address_institutions",
+    }.issubset(tables)
+    assert "address_entries" not in tables
+    columns = {c["name"] for c in inspect(eng).get_columns("institutions")}
+    assert {"address", "district_code", "has_infant_group"}.isdisjoint(columns)
     eng.dispose()
 
     up2 = _alembic(["upgrade", "head"], url)
     assert up2.returncode == 0, up2.stderr
     eng = _engine(url)
-    assert _current_revision(eng) == "0003"
+    assert _current_revision(eng) == "0004"
     tables = _table_names(eng)
     assert {
         "institutions",
@@ -145,6 +151,37 @@ def test_round_trip_upgrade_downgrade_upgrade(fresh_db: str) -> None:
     }.issubset(tables)
     assert "address_entries" not in tables
     eng.dispose()
+
+
+def test_institutions_metadata_columns_and_constraint(fresh_db: str) -> None:
+    url = fresh_db
+    up = _alembic(["upgrade", "head"], url)
+    assert up.returncode == 0, up.stderr
+
+    eng = _engine(url)
+    with eng.connect() as conn:
+        cols = conn.execute(
+            text(
+                "SELECT column_name, is_nullable, column_default "
+                "FROM information_schema.columns "
+                "WHERE table_name = 'institutions'"
+            )
+        ).all()
+        constraints = conn.execute(
+            text(
+                "SELECT conname FROM pg_constraint "
+                "WHERE conrelid = 'institutions'::regclass"
+            )
+        ).all()
+    eng.dispose()
+
+    by_name = {row[0]: row for row in cols}
+    assert by_name["address"][1] == "YES"
+    assert by_name["district_code"][1] == "YES"
+    assert by_name["has_infant_group"][1] == "NO"
+    assert by_name["has_infant_group"][2] == "false"
+    constraint_names = {c[0] for c in constraints}
+    assert "ck_institutions_district_code" in constraint_names
 
 
 def test_trigram_index_on_streets_search_norm(fresh_db: str) -> None:
