@@ -210,7 +210,7 @@ def test_has_infant_group_defaults_false(head_db: str) -> None:
         with engine.begin() as conn:
             inst_id = _insert_institution(
                 conn,
-                external_id="default-infant-flag",
+                external_id="infant-default",
                 kind="kindergarten",
             )
             value = conn.execute(

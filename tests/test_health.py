@@ -1,4 +1,4 @@
-"""/api/health: 200 + healthy body, 503 + error body when the DB raises."""
+"""/api/health: 200 + healthy body, 503 + generic body when the DB raises."""
 
 from __future__ import annotations
 
@@ -33,10 +33,7 @@ def test_health_returns_503_when_db_unreachable() -> None:
 
     resp = client.get("/api/health")
     assert resp.status_code == 503
-    body = resp.json()
-    assert body["status"] == "degraded"
-    assert body["db"] == "unreachable"
-    assert "error" in body
+    assert resp.json() == {"status": "degraded", "db": "unreachable"}
 
 
 def test_health_returns_503_via_broken_session() -> None:
@@ -65,9 +62,8 @@ def test_health_returns_503_via_broken_session() -> None:
         client = TestClient(app, raise_server_exceptions=False)
         resp = client.get("/api/health")
         assert resp.status_code == 503
-        body = resp.json()
-        assert body["status"] == "degraded"
-        assert body["db"] == "unreachable"
-        assert "error" in body
+        assert resp.json() == {"status": "degraded", "db": "unreachable"}
+        assert "boom" not in resp.text
+        assert "SELECT 1" not in resp.text
     finally:
         app.dependency_overrides.pop(health_module.get_db, None)
