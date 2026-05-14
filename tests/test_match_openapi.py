@@ -113,6 +113,7 @@ def test_match_item_schema_carries_six_fields_including_match_type(
         "kind",
         "source_url",
         "match_type",
+        "has_infant_group",
     }
     assert "search_norm" not in item_schema["properties"]
     assert _enum_values(openapi, item_schema["properties"]["kind"]) == EXPECTED_KINDS
@@ -120,3 +121,4 @@ def test_match_item_schema_carries_six_fields_including_match_type(
         "street",
         "district",
     }
+    assert item_schema["properties"]["has_infant_group"]["type"] == "boolean"

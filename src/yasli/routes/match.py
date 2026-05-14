@@ -62,6 +62,7 @@ class MatchInstitution(BaseModel):
     kind: Kind
     source_url: str
     match_type: Literal["street", "district"]
+    has_infant_group: bool
 
 
 class DistrictUnknownResponse(BaseModel):
@@ -96,6 +97,7 @@ def _kindergarten_rows(
             Institution.name,
             Institution.kind,
             Institution.source_url,
+            Institution.has_infant_group,
         )
         .join(
             address_institutions,
@@ -112,6 +114,7 @@ def _kindergarten_rows(
             kind=row.kind,
             source_url=row.source_url,
             match_type="street",
+            has_infant_group=row.has_infant_group,
         )
         for row in session.execute(stmt).all()
     ]
@@ -138,6 +141,7 @@ def _district_rows(
             Institution.name,
             Institution.kind,
             Institution.source_url,
+            Institution.has_infant_group,
         )
         .where(Institution.kind.in_(district_kinds))
         .where(Institution.district_code == district_code)
@@ -151,6 +155,7 @@ def _district_rows(
             kind=row.kind,
             source_url=row.source_url,
             match_type="district",
+            has_infant_group=row.has_infant_group,
         )
         for row in session.execute(stmt).all()
     ]

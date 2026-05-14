@@ -109,6 +109,7 @@ def _seed_fixture(_client: TestClient) -> None:
                     kind="kindergarten",
                     source_url="https://example.test/k1",
                     district_code="01",
+                    has_infant_group=True,
                     last_seen_at=now,
                 ),
                 Institution(
@@ -181,6 +182,15 @@ def test_kindergarten_match_type_is_street(client: TestClient) -> None:
     body = client.get("/api/match?address_id=1").json()
     k1 = next(r for r in body if r["external_id"] == "K1")
     assert k1["match_type"] == "street"
+
+
+def test_has_infant_group_flag_surfaces_for_kindergartens(client: TestClient) -> None:
+    _seed_fixture(client)
+    body = client.get("/api/match?address_id=1").json()
+    by_external = {r["external_id"]: r for r in body}
+    assert by_external["K1"]["has_infant_group"] is True
+    assert by_external["N1"]["has_infant_group"] is False
+    assert by_external["P1"]["has_infant_group"] is False
 
 
 def test_nursery_match_type_is_district(client: TestClient) -> None:
@@ -290,13 +300,22 @@ def test_unknown_district_kind_kindergarten_returns_bare_array(
 
 def test_existing_five_fields_present_byte_identical(client: TestClient) -> None:
     """Task 6.10: regression — every row still carries the original five
-    fields with their existing types (additive change for match_type).
+    fields with their existing types (additive change for match_type and
+    has_infant_group).
     """
     _seed_fixture(client)
     body = client.get("/api/match?address_id=1").json()
     assert isinstance(body, list)
     assert body  # non-empty
-    expected_keys = {"id", "external_id", "name", "kind", "source_url", "match_type"}
+    expected_keys = {
+        "id",
+        "external_id",
+        "name",
+        "kind",
+        "source_url",
+        "match_type",
+        "has_infant_group",
+    }
     for item in body:
         assert set(item.keys()) == expected_keys
         assert isinstance(item["id"], int)
@@ -304,6 +323,7 @@ def test_existing_five_fields_present_byte_identical(client: TestClient) -> None
         assert isinstance(item["name"], str)
         assert item["kind"] in {"nursery", "kindergarten", "preschool"}
         assert isinstance(item["source_url"], str)
+        assert isinstance(item["has_infant_group"], bool)
 
 
 def test_unknown_address_id_returns_404(client: TestClient) -> None:
