@@ -38,7 +38,7 @@ from typing import Literal, Union
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import literal, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from yasli.db import get_db
