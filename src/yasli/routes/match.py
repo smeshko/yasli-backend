@@ -2,28 +2,33 @@
 
 Mounted under ``/api`` by ``yasli.main``, so the public path is ``/api/match``.
 
-Two routing paths land in one response:
+Three routing paths land in one response:
 
-* **kindergartens** come from the existing ``address_institutions`` junction
+* **kindergartens** come from the ``address_institutions`` junction
   (street-level catchment), each row carrying ``match_type: "street"``.
-* **nurseries** and **preschools** come from the district-routing path:
-  ``institutions.district_code = (the query address's district_code)`` with
-  the requested kind filter applied. These rows carry
-  ``match_type: "district"``.
+* **nurseries** come from district routing only:
+  ``institutions.district_code = (the query address's district_code)``.
+  These rows carry ``match_type: "district"``.
+* **preschools** are hybrid: the source publishes per-PG catchment
+  streets for some institutions, so the junction is tried first. If
+  the address has at least one PG junction row, those are returned
+  (``match_type: "street"``) and the district fallback is skipped.
+  Otherwise we fall back to district routing
+  (``match_type: "district"``) — same SQL shape as nurseries.
 
 The response shape depends on the query address:
 
 * If the address's ``district_code`` is non-NULL → bare JSON array (the
   original v1 shape, preserved for the existing frontend caller).
-* If the address's ``district_code`` is NULL **and** the request could
-  have returned nurseries or preschools (i.e. ``kind`` is unset OR
-  explicitly ``nursery``/``preschool``) → envelope
+* If the address's ``district_code`` is NULL **and** results are likely
+  incomplete because of the missing district (nursery was requested,
+  or preschool was requested but had no junction rows) → envelope
   ``{ match_type: "district_unknown", results: [...] }`` whose ``results``
-  array contains kindergarten matches only (nurseries and preschools are
-  omitted since their routing is by district).
-* If the address's ``district_code`` is NULL **and** ``kind=kindergarten``
-  was explicit → bare array of kindergartens (the envelope only fires
-  when nursery/preschool results were expected).
+  array still contains every matchable row we could find (kindergartens
+  by junction, plus PG junction rows if any).
+* If the address's ``district_code`` is NULL **and** every requested
+  kind could be answered without district info (``kind=kindergarten``,
+  or ``kind=preschool`` with PG junction rows present) → bare array.
 
 Unknown ``address_id`` returns ``404 {"error": "address_not_found"}`` so
 the frontend can distinguish a stale local cache from a kind-filtered
@@ -52,8 +57,11 @@ router = APIRouter()
 class MatchInstitution(BaseModel):
     """One institution covering the queried address.
 
-    ``match_type`` is ``"street"`` for kindergartens (junction match) and
-    ``"district"`` for nurseries and preschools (district routing).
+    ``match_type`` is ``"street"`` for junction-based matches
+    (kindergartens always; preschools when the source publishes a
+    catchment that includes the address) and ``"district"`` for
+    district-routed matches (nurseries always; preschools when no
+    junction row was found).
     """
 
     id: int
@@ -86,10 +94,10 @@ def _effective_kinds(kind: Kind | None) -> tuple[Kind, ...]:
     return (kind,)
 
 
-def _kindergarten_rows(
-    session: Session, address_id: int
+def _street_rows(
+    session: Session, address_id: int, kind: Kind
 ) -> list[MatchInstitution]:
-    """Street-routing path: junction-based kindergartens."""
+    """Junction-based rows for ``address_id`` filtered to one ``kind``."""
     stmt = (
         select(
             Institution.id,
@@ -104,7 +112,7 @@ def _kindergarten_rows(
             Institution.id == address_institutions.c.institution_id,
         )
         .where(address_institutions.c.address_id == address_id)
-        .where(Institution.kind == "kindergarten")
+        .where(Institution.kind == kind)
     )
     return [
         MatchInstitution(
@@ -120,20 +128,10 @@ def _kindergarten_rows(
     ]
 
 
-def _district_rows(
-    session: Session,
-    district_code: str,
-    requested_kinds: tuple[Kind, ...],
+def _district_rows_for_kind(
+    session: Session, district_code: str, kind: Kind
 ) -> list[MatchInstitution]:
-    """District-routing path: filter by ``institutions.district_code``.
-
-    Used for nurseries and preschools. Kindergartens are never routed via
-    this path even when the kind filter is absent; the caller filters
-    them out of ``requested_kinds`` before calling.
-    """
-    district_kinds = tuple(k for k in requested_kinds if k != "kindergarten")
-    if not district_kinds:
-        return []
+    """District-routing rows filtered to one ``kind``."""
     stmt = (
         select(
             Institution.id,
@@ -143,7 +141,7 @@ def _district_rows(
             Institution.source_url,
             Institution.has_infant_group,
         )
-        .where(Institution.kind.in_(district_kinds))
+        .where(Institution.kind == kind)
         .where(Institution.district_code == district_code)
         .where(Institution.district_code.is_not(None))
     )
@@ -159,6 +157,26 @@ def _district_rows(
         )
         for row in session.execute(stmt).all()
     ]
+
+
+def _preschool_rows(
+    session: Session, address_id: int, address_district: str | None
+) -> list[MatchInstitution]:
+    """Preschools: prefer junction match; fall back to district routing.
+
+    The source publishes per-PG catchment streets for many institutions
+    in dg.uslugi.io's ``pg/region`` listings, so the junction is the
+    more specific signal when present. If the address has zero PG
+    junction rows we fall back to district routing (matches nursery
+    behaviour). When ``address_district`` is ``None`` the fallback is
+    skipped — the caller may emit the ``district_unknown`` envelope.
+    """
+    street_rows = _street_rows(session, address_id, "preschool")
+    if street_rows:
+        return street_rows
+    if address_district is None:
+        return []
+    return _district_rows_for_kind(session, address_district, "preschool")
 
 
 @router.get(
@@ -193,18 +211,30 @@ def match(
 
     results: list[MatchInstitution] = []
     if "kindergarten" in requested:
-        results.extend(_kindergarten_rows(session, address_id))
-    if address_district is not None:
-        results.extend(_district_rows(session, address_district, requested))
+        results.extend(_street_rows(session, address_id, "kindergarten"))
+    if "nursery" in requested and address_district is not None:
+        results.extend(
+            _district_rows_for_kind(session, address_district, "nursery")
+        )
+    preschool_results: list[MatchInstitution] = []
+    if "preschool" in requested:
+        preschool_results = _preschool_rows(
+            session, address_id, address_district
+        )
+        results.extend(preschool_results)
 
     # Existing ordering: kind ASC, name ASC.
     results.sort(key=lambda r: (r.kind, r.name))
 
-    # Envelope vs bare-array decision: envelope only when the request
-    # could have returned nurseries or preschools AND the address has no
-    # district stamp.
+    # Envelope vs bare-array decision: envelope when the address has no
+    # district stamp AND results were likely incomplete because of it.
+    # Nursery requests always need district. Preschool requests need
+    # district only when no junction rows answered the query.
+    preschool_needs_district = (
+        "preschool" in requested and not preschool_results
+    )
     needs_envelope = address_district is None and (
-        "nursery" in requested or "preschool" in requested
+        "nursery" in requested or preschool_needs_district
     )
     if needs_envelope:
         return DistrictUnknownResponse(results=results)

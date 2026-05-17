@@ -46,11 +46,11 @@ def _seed_fixture(_client: TestClient) -> None:
       N3 — nursery, district=NULL  (should never match)
       K1 — kindergarten, junction to {1, 2}
       K2 — kindergarten, junction to {3}
-      P1 — preschool, district='01' (catchment-majority Одесос)
-      P2 — preschool, district='02' (catchment-majority Приморски).
-           Has a junction edge to address 1 (its building sits there) —
-           used by the "junction is ignored for preschools" assertion.
-      P3 — preschool, district=NULL (should never match)
+      P1 — preschool, district='01' (district fallback in район Одесос)
+      P2 — preschool, district='02'. Has a junction edge to address 1
+           (source-published catchment). Exercised by the hybrid PG path:
+           addr 1 returns P2 via street, suppressing the district fallback.
+      P3 — preschool, district=NULL (should never match via district path)
     """
     assert db._SessionLocal is not None
     now = datetime(2026, 5, 13, tzinfo=UTC)
@@ -172,9 +172,10 @@ def test_district_known_returns_bare_array(client: TestClient) -> None:
     assert resp.status_code == 200
     body = resp.json()
     assert isinstance(body, list)
-    # Expect N1 (district='01'), K1 (junction), P1 (district='01').
+    # Expect N1 (district='01'), K1 (junction), P2 (junction wins over
+    # the район-01 district fallback that would have surfaced P1).
     by_external = {r["external_id"]: r for r in body}
-    assert set(by_external) == {"N1", "K1", "P1"}
+    assert set(by_external) == {"N1", "K1", "P2"}
 
 
 def test_kindergarten_match_type_is_street(client: TestClient) -> None:
@@ -190,7 +191,7 @@ def test_has_infant_group_flag_surfaces_for_kindergartens(client: TestClient) ->
     by_external = {r["external_id"]: r for r in body}
     assert by_external["K1"]["has_infant_group"] is True
     assert by_external["N1"]["has_infant_group"] is False
-    assert by_external["P1"]["has_infant_group"] is False
+    assert by_external["P2"]["has_infant_group"] is False
 
 
 def test_nursery_match_type_is_district(client: TestClient) -> None:
@@ -200,9 +201,23 @@ def test_nursery_match_type_is_district(client: TestClient) -> None:
     assert n1["match_type"] == "district"
 
 
-def test_preschool_match_type_is_district(client: TestClient) -> None:
+def test_preschool_match_type_is_street_when_junction_matches(
+    client: TestClient,
+) -> None:
     _seed_fixture(client)
     body = client.get("/api/match?address_id=1").json()
+    p2 = next(r for r in body if r["external_id"] == "P2")
+    assert p2["match_type"] == "street"
+
+
+def test_preschool_match_type_is_district_when_falling_back(
+    client: TestClient,
+) -> None:
+    """addr 2 has no PG junction edges, so the district fallback kicks in
+    and returns район-01 PGs with match_type='district'.
+    """
+    _seed_fixture(client)
+    body = client.get("/api/match?address_id=2&kind=preschool").json()
     p1 = next(r for r in body if r["external_id"] == "P1")
     assert p1["match_type"] == "district"
 
@@ -222,25 +237,26 @@ def test_nursery_filter_routes_by_district(client: TestClient) -> None:
     assert all(r["match_type"] == "district" for r in body)
 
 
-def test_preschool_filter_routes_by_district(client: TestClient) -> None:
-    _seed_fixture(client)
-    body = client.get("/api/match?address_id=1&kind=preschool").json()
-    assert {r["external_id"] for r in body} == {"P1"}
-    assert all(r["match_type"] == "district" for r in body)
-
-
-def test_preschool_catchment_majority_overrides_building_junction(
+def test_preschool_street_match_suppresses_district_fallback(
     client: TestClient,
 ) -> None:
-    """Task 6.11: P2's building is in район 01 (junction edge to addr 1)
-    but its catchment-majority is район 02. A query for addr 3 (район 02)
-    returns P2; a query for addr 1 (район 01) does NOT return P2.
+    """addr 1 has a PG junction edge to P2 — junction wins, P1 (the
+    район-01 district fallback) is NOT included.
     """
     _seed_fixture(client)
-    body_district_02 = client.get("/api/match?address_id=3&kind=preschool").json()
-    body_district_01 = client.get("/api/match?address_id=1&kind=preschool").json()
-    assert "P2" in {r["external_id"] for r in body_district_02}
-    assert "P2" not in {r["external_id"] for r in body_district_01}
+    body = client.get("/api/match?address_id=1&kind=preschool").json()
+    assert {r["external_id"] for r in body} == {"P2"}
+    assert all(r["match_type"] == "street" for r in body)
+
+
+def test_preschool_district_fallback_when_no_junction(
+    client: TestClient,
+) -> None:
+    """addr 2 has no PG junction — fall back to район-01 PGs."""
+    _seed_fixture(client)
+    body = client.get("/api/match?address_id=2&kind=preschool").json()
+    assert {r["external_id"] for r in body} == {"P1"}
+    assert all(r["match_type"] == "district" for r in body)
 
 
 def test_nursery_with_null_district_never_returned(client: TestClient) -> None:
@@ -252,6 +268,10 @@ def test_nursery_with_null_district_never_returned(client: TestClient) -> None:
 
 
 def test_preschool_with_null_district_never_returned(client: TestClient) -> None:
+    """P3 has no junction edges and no district stamp — never matches.
+    addr 1 returns a street match (P2); addr 2/3 use district fallback.
+    None of them should surface P3.
+    """
     _seed_fixture(client)
     for addr in (1, 2, 3):
         body = client.get(f"/api/match?address_id={addr}&kind=preschool").json()
@@ -280,9 +300,33 @@ def test_unknown_district_kind_nursery_returns_empty_envelope(
 def test_unknown_district_kind_preschool_returns_empty_envelope(
     client: TestClient,
 ) -> None:
+    """addr 4 has no district stamp AND no PG junction edges — both
+    routing paths are unavailable, so the envelope fires empty.
+    """
     _seed_fixture(client)
     body = client.get("/api/match?address_id=4&kind=preschool").json()
     assert body == {"match_type": "district_unknown", "results": []}
+
+
+def test_unknown_district_preschool_junction_match_returns_bare_array(
+    client: TestClient,
+) -> None:
+    """Hybrid PG: when district is unknown but a PG junction edge exists,
+    we can answer the request fully — the envelope must not fire.
+    """
+    assert db._SessionLocal is not None
+    _seed_fixture(client)
+    # Add a junction edge between addr 4 (district NULL) and P2.
+    with db._SessionLocal() as session:
+        session.execute(
+            insert(address_institutions),
+            [{"address_id": 4, "institution_id": 7}],
+        )
+        session.commit()
+    body = client.get("/api/match?address_id=4&kind=preschool").json()
+    assert isinstance(body, list)
+    assert {r["external_id"] for r in body} == {"P2"}
+    assert body[0]["match_type"] == "street"
 
 
 def test_unknown_district_kind_kindergarten_returns_bare_array(
