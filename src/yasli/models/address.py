@@ -89,6 +89,7 @@ class Address(Base):
     district_code: Mapped[DistrictCode | None] = mapped_column(
         String(2), nullable=True
     )
+    settlement_code: Mapped[str | None] = mapped_column(String(5), nullable=True)
 
     institutions: Mapped[list["Institution"]] = relationship(
         "Institution",

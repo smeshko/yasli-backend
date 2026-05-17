@@ -101,15 +101,19 @@ Check the overall NULL rate:
 
 ```sql
 SELECT
-  COUNT(*) FILTER (WHERE district_code IS NULL) AS unstamped,
-  COUNT(*)                                       AS total,
-  ROUND(100.0 * COUNT(*) FILTER (WHERE district_code IS NULL) / COUNT(*), 2) AS pct
+  COUNT(*) FILTER (WHERE district_code IS NULL)   AS no_district,
+  COUNT(*) FILTER (WHERE settlement_code IS NULL) AS no_settlement,
+  COUNT(*)                                        AS total
 FROM addresses;
--- Expect pct <= 2.0 for an up-to-date ГРАО snapshot.
+-- Expect no_settlement ≈ 0 (the settlement pass covers every Varna street).
+-- no_district = village addresses (Каменар/Тополи/Звездица/Константиново/Казашко)
+-- plus residual ГР.ВАРНА unmatched rows; aim for the city residual under 2%.
 ```
 
 Then hit `/api/match` for a couple of addresses in different районs and
-confirm the expected nurseries + preschools come back.
+confirm the expected nurseries + preschools come back. Spot-check at
+least one village address — it should return a `settlement_only`
+envelope.
 
 ### Rollback
 
@@ -122,12 +126,12 @@ codes), there is no "previous ГРАО" version in the DB. Two options:
 2. **Truncate** `grao_addresses` and reset the stamps:
    ```sql
    TRUNCATE grao_addresses;
-   UPDATE addresses    SET district_code = NULL;
+   UPDATE addresses    SET district_code = NULL, settlement_code = NULL;
    UPDATE institutions SET district_code = NULL WHERE kind <> 'nursery';
    ```
    The next weekly ingest will leave all KG/PG `district_code` columns
    at NULL until the next loader run; `/match` will return the
-   district-unknown envelope for affected queries.
+   `district_unknown` envelope for affected queries.
 
 ### What the weekly cron does automatically
 

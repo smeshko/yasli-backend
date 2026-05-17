@@ -68,13 +68,14 @@ Alembic, currently at revision `0005`. The schema is address-centric: catchments
 | --- | --- |
 | `institutions` | One row per (external_id, kind). Name, source URL, physical address, district code, infant-group flag. |
 | `streets` | Verbatim street strings + `search_norm` (normalised search form). Trigram index for fuzzy lookup. |
-| `addresses` | Physical address rows: `(street_id, number_int, number_suffix, entrance)`, stamped with `district_code`. |
-| `address_institutions` | Junction table — street-level catchment edges (mostly kindergartens). |
+| `addresses` | Physical address rows: `(street_id, number_int, number_suffix, entrance)`, stamped with `district_code` (район, 5 values) and `settlement_code` (5-digit ГРАО code; villages have settlement but no район). |
+| `address_institutions` | Junction table — street-level catchment edges (kindergartens always; preschools when the source publishes a per-PG catchment). |
 | `grao_addresses` | ГД ГРАО KADS reference rows loaded quarterly. Ground truth for `(street, number, entrance) → район`. |
 
-Catchments split into two kinds:
-- **Street-level** (kindergartens): explicit edges in `address_institutions`.
-- **District-level** (nurseries, preschools): no edges; matched by stamping `addresses.district_code` and looking up institutions in that district.
+Catchments routed in three ways:
+- **Kindergartens** — `address_institutions` junction (street-level).
+- **Nurseries** — `institutions.district_code = addresses.district_code` (район-level). Villages get no standalone nurseries.
+- **Preschools — hybrid**: prefer the junction; fall back to district routing only when the address has no PG junction row.
 
 ## Public API
 
@@ -87,7 +88,7 @@ All routes under `/api`, JSON responses, GETs only.
 | `GET /api/addresses` | Bulk dump of all addresses (~49,254 rows). ETag + 1h Cache-Control. |
 | `GET /api/institutions` | All institutions in browse order. ETag + 1h Cache-Control. |
 | `GET /api/institutions/{id}` | One institution profile + served addresses grouped by street. |
-| `GET /api/match?address_id={id}&kind={…}` | Institutions covering an address (street edges + district routing). |
+| `GET /api/match?address_id={id}&kind={…}` | Institutions covering an address. Returns a bare array when район is known, `{match_type: "settlement_only", results}` for villages (settlement set, район NULL), or `{match_type: "district_unknown", results}` when neither stamp is present. |
 
 ETags are content-derived strong tags; clients revalidate with `If-None-Match` for 304s.
 
@@ -99,7 +100,7 @@ ETags are content-derived strong tags; clients revalidate with `If-None-Match` f
 2. Validate against the vendored Pydantic snapshot contract.
 3. Parse house numbers (`ingest/parser.py`), normalise streets (`ingest/normalise.py`).
 4. Upsert streets → addresses → institutions → catchment edges in a single transaction.
-5. Run two gated district-stamping passes: addresses first (`grao_addresses` ground truth), then nursery/preschool institutions.
+5. Run gated stamping passes: address `district_code` (ГРАО join + entrance / street fallbacks), address `settlement_code` (raw-name prefix → 5-digit code for ГР.ВАРНА + the 5 villages), then KG/PG `district_code` (catchment-majority + address-parse fallback). Nurseries are scraper-stamped and skipped.
 6. Log structured stats: inserted/updated counts, elapsed ms.
 
 Subcommand `python -m yasli.ingest restamp-districts` propagates GRAO reassignments after a quarterly KADS reload — no R2 fetch needed. See `docs/OPERATIONS.md`.

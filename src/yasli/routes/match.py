@@ -8,7 +8,9 @@ Three routing paths land in one response:
   (street-level catchment), each row carrying ``match_type: "street"``.
 * **nurseries** come from district routing only:
   ``institutions.district_code = (the query address's district_code)``.
-  These rows carry ``match_type: "district"``.
+  Village addresses (no район) get an empty nursery list — there are
+  no standalone nurseries outside ГР.ВАРНА. These rows carry
+  ``match_type: "district"``.
 * **preschools** are hybrid: the source publishes per-PG catchment
   streets for some institutions, so the junction is tried first. If
   the address has at least one PG junction row, those are returned
@@ -19,16 +21,19 @@ Three routing paths land in one response:
 The response shape depends on the query address:
 
 * If the address's ``district_code`` is non-NULL → bare JSON array (the
-  original v1 shape, preserved for the existing frontend caller).
-* If the address's ``district_code`` is NULL **and** results are likely
-  incomplete because of the missing district (nursery was requested,
-  or preschool was requested but had no junction rows) → envelope
-  ``{ match_type: "district_unknown", results: [...] }`` whose ``results``
-  array still contains every matchable row we could find (kindergartens
-  by junction, plus PG junction rows if any).
-* If the address's ``district_code`` is NULL **and** every requested
-  kind could be answered without district info (``kind=kindergarten``,
-  or ``kind=preschool`` with PG junction rows present) → bare array.
+  original v1 shape, preserved for callers that don't care about
+  village-vs-city context).
+* If ``district_code`` is NULL but ``settlement_code`` is set (so the
+  address is in a village in община Варна) → envelope
+  ``{ match_type: "settlement_only", results: [...] }``. The frontend
+  uses this signal to render village-specific empty-state copy
+  (e.g. "this village has no nursery").
+* If both ``district_code`` and ``settlement_code`` are NULL **and**
+  results are likely incomplete (nursery requested, or PG requested
+  without junction hits) → envelope
+  ``{ match_type: "district_unknown", results: [...] }``. The
+  ``results`` array still contains every matchable row we could find
+  (kindergartens by junction, plus PG junction rows if any).
 
 Unknown ``address_id`` returns ``404 {"error": "address_not_found"}`` so
 the frontend can distinguish a stale local cache from a kind-filtered
@@ -74,18 +79,34 @@ class MatchInstitution(BaseModel):
 
 
 class DistrictUnknownResponse(BaseModel):
-    """Envelope returned when the queried address has no district stamp
-    and nurseries/preschools were among the kinds the request could have
-    returned. ``results`` carries kindergarten matches only.
+    """Envelope returned when the queried address has neither a район
+    nor a settlement stamp, so we cannot route district-based kinds at
+    all. ``results`` carries whatever junction matches we could find
+    (kindergartens and PGs by street).
     """
 
     match_type: Literal["district_unknown"] = Field(default="district_unknown")
     results: list[MatchInstitution]
 
 
+class SettlementOnlyResponse(BaseModel):
+    """Envelope returned when the queried address has a ``settlement_code``
+    but no ``district_code`` — i.e. it sits in a village in община Варна
+    (Каменар, Тополи, Звездица, Константиново, Казашко). ``results``
+    carries the village's junction matches; the frontend uses this
+    envelope as the signal to render village-specific copy (e.g. an
+    explicit "no nursery in this village" empty state).
+    """
+
+    match_type: Literal["settlement_only"] = Field(default="settlement_only")
+    results: list[MatchInstitution]
+
+
 # OpenAPI declares the 200 response as ``oneOf`` of the bare array and
-# the envelope shape, so generated TypeScript types narrow correctly.
-MatchResponse = Union[list[MatchInstitution], DistrictUnknownResponse]
+# the envelope shapes, so generated TypeScript types narrow correctly.
+MatchResponse = Union[
+    list[MatchInstitution], DistrictUnknownResponse, SettlementOnlyResponse
+]
 
 
 def _effective_kinds(kind: Kind | None) -> tuple[Kind, ...]:
@@ -186,9 +207,10 @@ def _preschool_rows(
         200: {
             "description": (
                 "Bare array of institution rows when the queried address has "
-                "a known district. Envelope `{match_type: 'district_unknown', "
-                "results: [...]}` when the district is unknown and nursery/"
-                "preschool matches were possible."
+                "a known район. Envelope `{match_type: 'settlement_only', "
+                "results: [...]}` for villages (settlement stamped, район "
+                "NULL). Envelope `{match_type: 'district_unknown', results: "
+                "[...]}` when neither район nor settlement is stamped."
             )
         }
     },
@@ -199,7 +221,9 @@ def match(
     session: Session = Depends(get_db),
 ) -> MatchResponse | JSONResponse:
     address_row = session.execute(
-        select(Address.district_code).where(Address.id == address_id).limit(1)
+        select(Address.district_code, Address.settlement_code)
+        .where(Address.id == address_id)
+        .limit(1)
     ).first()
     if address_row is None:
         return JSONResponse(
@@ -207,8 +231,15 @@ def match(
         )
 
     address_district = address_row[0]
+    address_settlement = address_row[1]
     requested = _effective_kinds(kind)
 
+    # Nursery routing: район-filtered when the address has a district
+    # stamp. Village addresses (settlement set, no район) get no
+    # standalone nurseries here — there are zero standalone nurseries
+    # outside ГР.ВАРНА, so the city-wide list would just be noise.
+    # KGs-with-infant-group still surface in the nursery section via
+    # frontend grouping on the junction match.
     results: list[MatchInstitution] = []
     if "kindergarten" in requested:
         results.extend(_street_rows(session, address_id, "kindergarten"))
@@ -226,16 +257,21 @@ def match(
     # Existing ordering: kind ASC, name ASC.
     results.sort(key=lambda r: (r.kind, r.name))
 
-    # Envelope vs bare-array decision: envelope when the address has no
-    # district stamp AND results were likely incomplete because of it.
-    # Nursery requests always need district. Preschool requests need
-    # district only when no junction rows answered the query.
+    # Response shape: bare array when район is known. SettlementOnly
+    # envelope when район is unknown but settlement is set (village
+    # addresses — the frontend uses this to pick village-specific copy).
+    # DistrictUnknown envelope when neither stamp is set AND a kind
+    # that needs them was requested.
     preschool_needs_district = (
         "preschool" in requested and not preschool_results
     )
-    needs_envelope = address_district is None and (
-        "nursery" in requested or preschool_needs_district
+    if address_district is None and address_settlement is not None:
+        return SettlementOnlyResponse(results=results)
+    needs_district_unknown = (
+        address_district is None
+        and address_settlement is None
+        and ("nursery" in requested or preschool_needs_district)
     )
-    if needs_envelope:
+    if needs_district_unknown:
         return DistrictUnknownResponse(results=results)
     return results

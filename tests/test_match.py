@@ -35,10 +35,12 @@ def client() -> TestClient:
 
 
 def _seed_fixture(_client: TestClient) -> None:
-    """Seed a small dataset that exercises both routing paths.
+    """Seed a small dataset that exercises every routing path.
 
     Districts: addresses 1 + 2 are in '01' (Одесос); address 3 is in '02'
-    (Приморски); address 4 has district_code IS NULL.
+    (Приморски); address 4 has both district_code and settlement_code
+    NULL (truly unrecognised); address 5 is in a Varna village with
+    settlement_code set but district_code NULL (the village fallback case).
 
     Institutions:
       N1 — nursery, district='01' (only via district routing)
@@ -67,10 +69,41 @@ def _seed_fixture(_client: TestClient) -> None:
         )
         session.add_all(
             [
-                Address(id=1, street_id=1, number_int=1, district_code="01"),
-                Address(id=2, street_id=1, number_int=2, district_code="01"),
-                Address(id=3, street_id=1, number_int=3, district_code="02"),
-                Address(id=4, street_id=1, number_int=4, district_code=None),
+                Address(
+                    id=1,
+                    street_id=1,
+                    number_int=1,
+                    district_code="01",
+                    settlement_code="10135",
+                ),
+                Address(
+                    id=2,
+                    street_id=1,
+                    number_int=2,
+                    district_code="01",
+                    settlement_code="10135",
+                ),
+                Address(
+                    id=3,
+                    street_id=1,
+                    number_int=3,
+                    district_code="02",
+                    settlement_code="10135",
+                ),
+                Address(
+                    id=4,
+                    street_id=1,
+                    number_int=4,
+                    district_code=None,
+                    settlement_code=None,
+                ),
+                Address(
+                    id=5,
+                    street_id=1,
+                    number_int=5,
+                    district_code=None,
+                    settlement_code="35701",  # с. Каменар
+                ),
             ]
         )
         session.add_all(
@@ -327,6 +360,42 @@ def test_unknown_district_preschool_junction_match_returns_bare_array(
     assert isinstance(body, list)
     assert {r["external_id"] for r in body} == {"P2"}
     assert body[0]["match_type"] == "street"
+
+
+def test_village_address_returns_settlement_only_envelope(
+    client: TestClient,
+) -> None:
+    """addr 5 is in с. Каменар (settlement set, district NULL). The
+    response wraps in a settlement_only envelope so the frontend can
+    render village-specific copy. No standalone nurseries surface
+    (there are none in any village).
+    """
+    _seed_fixture(client)
+    resp = client.get("/api/match?address_id=5")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert isinstance(body, dict)
+    assert body["match_type"] == "settlement_only"
+    assert {r["external_id"] for r in body["results"] if r["kind"] == "nursery"} == set()
+
+
+def test_village_address_kind_nursery_settlement_only_empty(
+    client: TestClient,
+) -> None:
+    _seed_fixture(client)
+    body = client.get("/api/match?address_id=5&kind=nursery").json()
+    assert body == {"match_type": "settlement_only", "results": []}
+
+
+def test_village_address_district_unknown_envelope_does_not_fire(
+    client: TestClient,
+) -> None:
+    """Settlement-only addresses must NOT trigger the district_unknown
+    envelope — they have a confirmed settlement and a distinct shape.
+    """
+    _seed_fixture(client)
+    body = client.get("/api/match?address_id=5").json()
+    assert body["match_type"] != "district_unknown"
 
 
 def test_unknown_district_kind_kindergarten_returns_bare_array(

@@ -51,6 +51,24 @@ class AddressesStampSummary:
     fallback2_stamped: int = 0
     remaining_null: int = 0
     null_sample: list[str] = field(default_factory=list)
+    settlement_stamped: int = 0
+
+
+# Settlements in Bulgarian's община Варна, mapped to their 5-digit ГРАО
+# settlement codes. The list is closed (Varna municipality has exactly
+# six populated places) and stable across cycles, so we hard-code it
+# rather than re-derive from grao_addresses — the loader strips the
+# village header lines (they have no район) before they reach
+# grao_addresses, so we cannot recover village codes from there.
+_VARNA_SETTLEMENTS: tuple[tuple[str, str, str], ...] = (
+    # (raw-name LIKE pattern with space, LIKE without space, code)
+    ("ГР.ВАРНА%", "ГР. ВАРНА%", "10135"),
+    ("С.КАМЕНАР%", "С. КАМЕНАР%", "35701"),
+    ("С.ТОПОЛИ%", "С. ТОПОЛИ%", "72709"),
+    ("С.ЗВЕЗДИЦА%", "С. ЗВЕЗДИЦА%", "30497"),
+    ("С.КОНСТАНТИНОВО%", "С. КОНСТАНТИНОВО%", "38354"),
+    ("С.КАЗАШКО%", "С. КАЗАШКО%", "35211"),
+)
 
 
 @dataclass
@@ -159,10 +177,27 @@ def _single_district(rows: list[Any]) -> str | None:
     return str(rows[0][0]) if len(rows) == 1 else None
 
 
+def _settlement_case_sql() -> str:
+    """Build the ``CASE WHEN`` body used by the settlement stamping pass.
+
+    Returns SQL fragments wired into a correlated subquery, so the same
+    text works on Postgres and SQLite (no UPDATE … FROM portability
+    issues). Patterns cover the two punctuation styles ГРАО / the
+    scraper emit (``С.КАМЕНАР`` and ``С. КАМЕНАР``).
+    """
+    branches = []
+    for pat_nospace, pat_space, code in _VARNA_SETTLEMENTS:
+        branches.append(
+            f"WHEN s.raw_name LIKE '{pat_nospace}' "
+            f"OR s.raw_name LIKE '{pat_space}' THEN '{code}'"
+        )
+    return "CASE " + " ".join(branches) + " ELSE NULL END"
+
+
 def _stamp_addresses(
     session: Session, *, gated: bool
 ) -> AddressesStampSummary:
-    """Run the three stamping tiers; return per-tier counts and a sample."""
+    """Run the three district tiers + settlement pass; return counts."""
     null_clause = "addresses.district_code IS NULL" if gated else "1=1"
 
     summary = AddressesStampSummary()
@@ -184,6 +219,19 @@ def _stamp_addresses(
         text(_FALLBACK2_UPDATE_SQL.format(gate="addresses.district_code IS NULL"))
     )
     summary.fallback2_stamped = _row_count(result)
+
+    # Settlement pass: covers ГР.ВАРНА (also stamps the district-stamped
+    # city addresses for completeness) and the five villages, which
+    # never get a district stamp because villages have no район.
+    settlement_gate = "settlement_code IS NULL" if gated else "1=1"
+    settlement_sql = (
+        f"UPDATE addresses SET settlement_code = ("
+        f"  SELECT {_settlement_case_sql()} FROM streets s "
+        f"  WHERE s.id = addresses.street_id"
+        f") WHERE {settlement_gate}"
+    )
+    result = session.execute(text(settlement_sql))
+    summary.settlement_stamped = _row_count(result)
 
     summary.remaining_null = int(
         session.execute(text(_COUNT_NULL_SQL)).scalar_one()
