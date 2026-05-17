@@ -112,8 +112,8 @@ FROM addresses;
 
 Then hit `/api/match` for a couple of addresses in different районs and
 confirm the expected nurseries + preschools come back. Spot-check at
-least one village address — it should return a `settlement_only`
-envelope.
+least one village address — it should return structured `{address, results}`
+with `address.district_code = null` and settlement context.
 
 ### Rollback
 
@@ -130,8 +130,9 @@ codes), there is no "previous ГРАО" version in the DB. Two options:
    UPDATE institutions SET district_code = NULL WHERE kind <> 'nursery';
    ```
    The next weekly ingest will leave all KG/PG `district_code` columns
-   at NULL until the next loader run; `/match` will return the
-   `district_unknown` envelope for affected queries.
+   at NULL until the next loader run; `/match` will return structured
+   address context with `address.district_code = null`, and district-routed
+   groups will be unavailable for affected queries.
 
 ### What the weekly cron does automatically
 

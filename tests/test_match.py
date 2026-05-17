@@ -1,6 +1,4 @@
-"""/api/match: street vs district routing, district-unknown envelope,
-existing-field regression, and validation.
-"""
+"""/api/match: structured address context, routing, ordering, and validation."""
 
 from __future__ import annotations
 
@@ -229,60 +227,81 @@ def _seed_fixture(_client: TestClient) -> None:
         session.commit()
 
 
-def test_district_known_returns_bare_array(client: TestClient) -> None:
+STRUCTURED_RESULT_KEYS = {
+    "id",
+    "external_id",
+    "name",
+    "institution_kind",
+    "reception_kind",
+    "offering",
+    "source_url",
+    "match_basis",
+    "has_infant_group",
+}
+
+
+def _result_by_external(body: dict, external_id: str) -> dict:
+    return next(r for r in body["results"] if r["external_id"] == external_id)
+
+
+def test_match_district_known_returns_structured_object_with_mixed_results(
+    client: TestClient,
+) -> None:
     _seed_fixture(client)
     resp = client.get("/api/match?address_id=1")
     assert resp.status_code == 200
     body = resp.json()
-    assert isinstance(body, list)
-    # Expect N1 (district='01'), K1 (junction), P2 (junction wins over
-    # the район-01 district fallback that would have surfaced P1).
-    by_external = {r["external_id"]: r for r in body}
-    assert set(by_external) == {"N1", "K1", "P2"}
 
-
-def test_kindergarten_match_type_is_street(client: TestClient) -> None:
-    _seed_fixture(client)
-    body = client.get("/api/match?address_id=1").json()
-    k1 = next(r for r in body if r["external_id"] == "K1")
-    assert k1["match_type"] == "street"
+    assert set(body.keys()) == {"address", "results"}
+    assert body["address"] == {
+        "id": 1,
+        "district_code": "01",
+        "settlement": {
+            "code": "10135",
+            "name": "ГР.ВАРНА",
+            "locality_type": "city",
+        },
+    }
+    by_reception = {
+        (r["external_id"], r["reception_kind"], r["offering"]): r
+        for r in body["results"]
+    }
+    assert set(by_reception) == {
+        ("K1", "nursery", "infant_group"),
+        ("N1", "nursery", "standard"),
+        ("K1", "kindergarten", "standard"),
+        ("P2", "preschool", "standard"),
+    }
+    assert by_reception[("K1", "kindergarten", "standard")]["match_basis"] == "address"
+    assert by_reception[("K1", "nursery", "infant_group")]["match_basis"] == "address"
+    assert by_reception[("N1", "nursery", "standard")]["match_basis"] == "district"
+    assert by_reception[("P2", "preschool", "standard")]["match_basis"] == "address"
+    assert by_reception[("K1", "kindergarten", "standard")]["has_infant_group"] is True
+    assert by_reception[("K1", "nursery", "infant_group")]["has_infant_group"] is True
+    for item in body["results"]:
+        assert set(item.keys()) == STRUCTURED_RESULT_KEYS
+        assert "kind" not in item
+        assert "match_type" not in item
 
 
 def test_has_infant_group_flag_surfaces_for_kindergartens(client: TestClient) -> None:
     _seed_fixture(client)
     body = client.get("/api/match?address_id=1").json()
-    by_external = {r["external_id"]: r for r in body}
-    assert by_external["K1"]["has_infant_group"] is True
-    assert by_external["N1"]["has_infant_group"] is False
-    assert by_external["P2"]["has_infant_group"] is False
+    assert _result_by_external(body, "K1")["has_infant_group"] is True
+    assert _result_by_external(body, "N1")["has_infant_group"] is False
+    assert _result_by_external(body, "P2")["has_infant_group"] is False
 
 
-def test_nursery_match_type_is_district(client: TestClient) -> None:
-    _seed_fixture(client)
-    body = client.get("/api/match?address_id=1").json()
-    n1 = next(r for r in body if r["external_id"] == "N1")
-    assert n1["match_type"] == "district"
-
-
-def test_preschool_match_type_is_street_when_junction_matches(
-    client: TestClient,
-) -> None:
-    _seed_fixture(client)
-    body = client.get("/api/match?address_id=1").json()
-    p2 = next(r for r in body if r["external_id"] == "P2")
-    assert p2["match_type"] == "street"
-
-
-def test_preschool_match_type_is_district_when_falling_back(
+def test_preschool_match_basis_is_district_when_falling_back(
     client: TestClient,
 ) -> None:
     """addr 2 has no PG junction edges, so the district fallback kicks in
-    and returns район-01 PGs with match_type='district'.
+    and returns район-01 PGs with match_basis='district'.
     """
     _seed_fixture(client)
     body = client.get("/api/match?address_id=2&kind=preschool").json()
-    p1 = next(r for r in body if r["external_id"] == "P1")
-    assert p1["match_type"] == "district"
+    p1 = _result_by_external(body, "P1")
+    assert p1["match_basis"] == "district"
 
 
 def test_kindergarten_filter_only_returns_junction_matches(
@@ -290,14 +309,17 @@ def test_kindergarten_filter_only_returns_junction_matches(
 ) -> None:
     _seed_fixture(client)
     body = client.get("/api/match?address_id=1&kind=kindergarten").json()
-    assert {r["external_id"] for r in body} == {"K1"}
+    assert {r["external_id"] for r in body["results"]} == {"K1"}
+    assert all(r["institution_kind"] == "kindergarten" for r in body["results"])
+    assert all(r["match_basis"] == "address" for r in body["results"])
 
 
 def test_nursery_filter_routes_by_district(client: TestClient) -> None:
     _seed_fixture(client)
     body = client.get("/api/match?address_id=1&kind=nursery").json()
-    assert {r["external_id"] for r in body} == {"N1"}
-    assert all(r["match_type"] == "district" for r in body)
+    assert {r["external_id"] for r in body["results"]} == {"N1"}
+    assert all(r["institution_kind"] == "nursery" for r in body["results"])
+    assert all(r["match_basis"] == "district" for r in body["results"])
 
 
 def test_preschool_street_match_suppresses_district_fallback(
@@ -308,8 +330,8 @@ def test_preschool_street_match_suppresses_district_fallback(
     """
     _seed_fixture(client)
     body = client.get("/api/match?address_id=1&kind=preschool").json()
-    assert {r["external_id"] for r in body} == {"P2"}
-    assert all(r["match_type"] == "street" for r in body)
+    assert {r["external_id"] for r in body["results"]} == {"P2"}
+    assert all(r["match_basis"] == "address" for r in body["results"])
 
 
 def test_preschool_district_fallback_when_no_junction(
@@ -318,8 +340,8 @@ def test_preschool_district_fallback_when_no_junction(
     """addr 2 has no PG junction — fall back to район-01 PGs."""
     _seed_fixture(client)
     body = client.get("/api/match?address_id=2&kind=preschool").json()
-    assert {r["external_id"] for r in body} == {"P1"}
-    assert all(r["match_type"] == "district" for r in body)
+    assert {r["external_id"] for r in body["results"]} == {"P1"}
+    assert all(r["match_basis"] == "district" for r in body["results"])
 
 
 def test_nursery_with_null_district_never_returned(client: TestClient) -> None:
@@ -327,7 +349,7 @@ def test_nursery_with_null_district_never_returned(client: TestClient) -> None:
     # N3 has district_code IS NULL — never matches any district query.
     for addr in (1, 2, 3):
         body = client.get(f"/api/match?address_id={addr}&kind=nursery").json()
-        assert "N3" not in {r["external_id"] for r in body}
+        assert "N3" not in {r["external_id"] for r in body["results"]}
 
 
 def test_preschool_with_null_district_never_returned(client: TestClient) -> None:
@@ -338,44 +360,50 @@ def test_preschool_with_null_district_never_returned(client: TestClient) -> None
     _seed_fixture(client)
     for addr in (1, 2, 3):
         body = client.get(f"/api/match?address_id={addr}&kind=preschool").json()
-        assert "P3" not in {r["external_id"] for r in body}
+        assert "P3" not in {r["external_id"] for r in body["results"]}
 
 
-def test_unknown_district_no_filter_returns_envelope(client: TestClient) -> None:
+def test_unknown_district_no_filter_returns_structured_context(
+    client: TestClient,
+) -> None:
     _seed_fixture(client)
     resp = client.get("/api/match?address_id=4")
     assert resp.status_code == 200
     body = resp.json()
-    assert isinstance(body, dict)
-    assert body["match_type"] == "district_unknown"
-    # Address 4 has no junction edges → no kindergartens either.
+    assert body["address"] == {
+        "id": 4,
+        "district_code": None,
+        "settlement": None,
+    }
     assert body["results"] == []
 
 
-def test_unknown_district_kind_nursery_returns_empty_envelope(
+def test_unknown_district_kind_nursery_returns_empty_results(
     client: TestClient,
 ) -> None:
     _seed_fixture(client)
     body = client.get("/api/match?address_id=4&kind=nursery").json()
-    assert body == {"match_type": "district_unknown", "results": []}
+    assert body["address"]["district_code"] is None
+    assert body["results"] == []
 
 
-def test_unknown_district_kind_preschool_returns_empty_envelope(
+def test_unknown_district_kind_preschool_returns_empty_results(
     client: TestClient,
 ) -> None:
     """addr 4 has no district stamp AND no PG junction edges — both
-    routing paths are unavailable, so the envelope fires empty.
+    routing paths are unavailable, so structured results are empty.
     """
     _seed_fixture(client)
     body = client.get("/api/match?address_id=4&kind=preschool").json()
-    assert body == {"match_type": "district_unknown", "results": []}
+    assert body["address"]["district_code"] is None
+    assert body["results"] == []
 
 
-def test_unknown_district_preschool_junction_match_returns_bare_array(
+def test_unknown_district_preschool_junction_match_returns_structured_result(
     client: TestClient,
 ) -> None:
     """Hybrid PG: when district is unknown but a PG junction edge exists,
-    we can answer the request fully — the envelope must not fire.
+    the structured response still carries the address-level match.
     """
     assert db._SessionLocal is not None
     _seed_fixture(client)
@@ -387,85 +415,84 @@ def test_unknown_district_preschool_junction_match_returns_bare_array(
         )
         session.commit()
     body = client.get("/api/match?address_id=4&kind=preschool").json()
-    assert isinstance(body, list)
-    assert {r["external_id"] for r in body} == {"P2"}
-    assert body[0]["match_type"] == "street"
+    assert body["address"]["district_code"] is None
+    assert {r["external_id"] for r in body["results"]} == {"P2"}
+    assert body["results"][0]["match_basis"] == "address"
 
 
-def test_village_address_returns_settlement_only_envelope(
+def test_village_address_returns_settlement_context_without_envelope(
     client: TestClient,
 ) -> None:
-    """addr 5 is in с. Каменар (settlement set, district NULL). The
-    response wraps in a settlement_only envelope so the frontend can
-    render village-specific copy. No standalone nurseries surface
-    (there are none in any village).
-    """
     _seed_fixture(client)
     resp = client.get("/api/match?address_id=5")
     assert resp.status_code == 200
     body = resp.json()
-    assert isinstance(body, dict)
-    assert body["match_type"] == "settlement_only"
-    assert {r["external_id"] for r in body["results"] if r["kind"] == "nursery"} == set()
+    assert body["address"] == {
+        "id": 5,
+        "district_code": None,
+        "settlement": {
+            "code": "35701",
+            "name": "С.КАМЕНАР",
+            "locality_type": "village",
+        },
+    }
+    assert {
+        r["external_id"]
+        for r in body["results"]
+        if r["institution_kind"] == "nursery"
+    } == set()
 
 
-def test_village_address_kind_nursery_settlement_only_empty(
+def test_village_address_kind_nursery_returns_empty_structured_results(
     client: TestClient,
 ) -> None:
     _seed_fixture(client)
     body = client.get("/api/match?address_id=5&kind=nursery").json()
-    assert body == {"match_type": "settlement_only", "results": []}
+    assert body["address"]["settlement"]["locality_type"] == "village"
+    assert body["results"] == []
 
 
-def test_village_address_district_unknown_envelope_does_not_fire(
+def test_district_null_city_returns_city_context_without_envelope(
     client: TestClient,
 ) -> None:
-    """Settlement-only addresses must NOT trigger the district_unknown
-    envelope — they have a confirmed settlement and a distinct shape.
-    """
     _seed_fixture(client)
-    body = client.get("/api/match?address_id=5").json()
-    assert body["match_type"] != "district_unknown"
+    resp = client.get("/api/match?address_id=6")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["address"]["district_code"] is None
+    assert body["address"]["settlement"] == {
+        "code": "10135",
+        "name": "ГР.ВАРНА",
+        "locality_type": "city",
+    }
 
 
-def test_unknown_district_kind_kindergarten_returns_bare_array(
+def test_unknown_district_kind_kindergarten_returns_structured_results(
     client: TestClient,
 ) -> None:
-    """The envelope only fires when nurseries/preschools could have
-    appeared. With kind=kindergarten explicit, the original bare-array
-    shape is preserved (district stamp is moot for KG routing).
-    """
     _seed_fixture(client)
     resp = client.get("/api/match?address_id=4&kind=kindergarten")
+    assert resp.status_code == 200
     body = resp.json()
-    assert isinstance(body, list)  # bare array, NOT envelope
+    assert set(body.keys()) == {"address", "results"}
+    assert body["address"]["district_code"] is None
+    assert body["results"] == []
 
 
-def test_existing_five_fields_present_byte_identical(client: TestClient) -> None:
-    """Task 6.10: regression — every row still carries the original five
-    fields with their existing types (additive change for match_type and
-    has_infant_group).
-    """
+def test_structured_result_fields_present(client: TestClient) -> None:
     _seed_fixture(client)
     body = client.get("/api/match?address_id=1").json()
-    assert isinstance(body, list)
-    assert body  # non-empty
-    expected_keys = {
-        "id",
-        "external_id",
-        "name",
-        "kind",
-        "source_url",
-        "match_type",
-        "has_infant_group",
-    }
-    for item in body:
-        assert set(item.keys()) == expected_keys
+    assert body["results"]
+    for item in body["results"]:
+        assert set(item.keys()) == STRUCTURED_RESULT_KEYS
         assert isinstance(item["id"], int)
         assert isinstance(item["external_id"], str)
         assert isinstance(item["name"], str)
-        assert item["kind"] in {"nursery", "kindergarten", "preschool"}
+        assert item["institution_kind"] in {"nursery", "kindergarten", "preschool"}
+        assert item["reception_kind"] in {"nursery", "kindergarten", "preschool"}
+        assert item["offering"] in {"standard", "infant_group"}
         assert isinstance(item["source_url"], str)
+        assert item["match_basis"] in {"address", "district"}
         assert isinstance(item["has_infant_group"], bool)
 
 
@@ -506,11 +533,40 @@ def test_ordering_is_stable_for_district_known(client: TestClient) -> None:
     assert first.content == second.content
 
 
-def test_ordering_is_kind_then_name(client: TestClient) -> None:
+def test_ordering_is_reception_kind_then_name(client: TestClient) -> None:
     _seed_fixture(client)
     body = client.get("/api/match?address_id=1").json()
-    keys = [(item["kind"], item["name"]) for item in body]
-    assert keys == sorted(keys)
+    keys = [
+        (
+            item["reception_kind"],
+            item["name"],
+            item["institution_kind"],
+            item["offering"],
+        )
+        for item in body["results"]
+    ]
+    kind_order = {"nursery": 0, "kindergarten": 1, "preschool": 2}
+    assert keys == sorted(
+        keys,
+        key=lambda item: (kind_order[item[0]], item[1], item[2], item[3]),
+    )
+
+
+def test_match_v2_alias_matches_canonical_response(client: TestClient) -> None:
+    _seed_fixture(client)
+    canonical = client.get("/api/match?address_id=1")
+    alias = client.get("/api/match/v2?address_id=1")
+    assert alias.status_code == 200
+    assert alias.json() == canonical.json()
+
+
+def test_match_v2_alias_preserves_stale_address_error(client: TestClient) -> None:
+    _seed_fixture(client)
+    canonical = client.get("/api/match?address_id=999999")
+    alias = client.get("/api/match/v2?address_id=999999")
+    assert canonical.status_code == 404
+    assert alias.status_code == 404
+    assert alias.json() == canonical.json()
 
 
 def test_v2_district_known_returns_structured_object_with_mixed_results(
@@ -604,8 +660,6 @@ def test_v2_village_address_returns_settlement_context_without_envelope(
         "name": "С.КАМЕНАР",
         "locality_type": "village",
     }
-    assert "district_unknown" not in resp.text
-    assert "settlement_only" not in resp.text
 
 
 def test_v2_district_null_city_returns_city_context_without_envelope(
@@ -623,8 +677,6 @@ def test_v2_district_null_city_returns_city_context_without_envelope(
         "name": "ГР.ВАРНА",
         "locality_type": "city",
     }
-    assert "district_unknown" not in resp.text
-    assert "settlement_only" not in resp.text
 
 
 def test_v2_address_without_settlement_reference_returns_null_settlement(
