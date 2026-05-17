@@ -19,10 +19,11 @@ from yasli.models import (
     Base,
     GraoAddress,
     Institution,
+    Settlement,
     Street,
     address_institutions,
 )
-from yasli.models.types import DISTRICT_CODE_VALUES, KIND_VALUES
+from yasli.models.types import DISTRICT_CODE_VALUES, KIND_VALUES, LOCALITY_TYPE_VALUES
 
 
 def test_metadata_registers_v2_tables() -> None:
@@ -33,6 +34,7 @@ def test_metadata_registers_v2_tables() -> None:
         "addresses",
         "address_institutions",
         "grao_addresses",
+        "settlements",
     }.issubset(tables)
     assert "address_entries" not in tables
 
@@ -43,6 +45,7 @@ def test_orm_classes_resolve() -> None:
     assert Address.__tablename__ == "addresses"
     assert address_institutions.name == "address_institutions"
     assert GraoAddress.__tablename__ == "grao_addresses"
+    assert Settlement.__tablename__ == "settlements"
 
 
 def test_institution_kind_literal_matches_check_constraint() -> None:
@@ -104,6 +107,45 @@ def test_address_district_code_literal_matches_check_constraint() -> None:
 
 def test_address_district_code_column_is_nullable() -> None:
     assert Address.__table__.c.district_code.nullable is True
+
+
+def test_settlement_locality_type_literal_matches_check_constraint() -> None:
+    hints = typing.get_type_hints(
+        Settlement,
+        include_extras=False,
+    )
+    locality_type = hints["locality_type"]
+    inner_args = typing.get_args(locality_type)
+    assert len(inner_args) == 1, locality_type
+    literal_args = typing.get_args(inner_args[0])
+    assert set(literal_args) == set(LOCALITY_TYPE_VALUES)
+
+
+def test_settlement_columns_registered() -> None:
+    cols = Settlement.__table__.c
+    expected = {
+        "code",
+        "name",
+        "locality_type",
+        "municipality_code",
+        "municipality_name",
+        "source",
+    }
+    actual_cols = {c.name for c in cols}
+    assert expected.issubset(actual_cols)
+    assert cols.code.primary_key is True
+    assert cols.code.nullable is False
+    assert cols.name.nullable is False
+    assert cols.locality_type.nullable is False
+    assert cols.municipality_code.nullable is False
+    assert cols.municipality_name.nullable is False
+    assert cols.source.nullable is False
+    assert cols.code.type.length == 5
+    assert cols.name.type.length == 64
+    assert cols.locality_type.type.length == 16
+    assert cols.municipality_code.type.length == 2
+    assert cols.municipality_name.type.length == 64
+    assert cols.source.type.length == 32
 
 
 def test_grao_address_columns_registered() -> None:
@@ -189,3 +231,24 @@ def test_grao_address_round_trips(session_factory) -> None:
         assert row.district_name == "ПРИМОРСКИ"
         assert row.entrance == "А"
         assert row.number_suffix == ""
+
+
+def test_settlement_round_trips(session_factory) -> None:
+    with Session(session_factory) as s:
+        s.add(
+            Settlement(
+                code="99999",
+                name="ТЕСТ",
+                locality_type="city",
+            )
+        )
+        s.commit()
+
+    with Session(session_factory) as s:
+        row = s.execute(select(Settlement)).scalar_one()
+        assert row.code == "99999"
+        assert row.name == "ТЕСТ"
+        assert row.locality_type == "city"
+        assert row.municipality_code == "06"
+        assert row.municipality_name == "ВАРНА"
+        assert row.source == "grao_kads"

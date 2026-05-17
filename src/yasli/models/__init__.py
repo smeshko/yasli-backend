@@ -14,14 +14,17 @@ class Base(DeclarativeBase):
 
 from yasli.models.types import (  # noqa: E402
     DISTRICT_CODE_VALUES,
+    LOCALITY_TYPE_VALUES,
     DistrictCode,
     KIND_VALUES,
     Kind,
+    LocalityType,
 )
 from yasli.models.institution import Institution  # noqa: E402
 from yasli.models.street import Street  # noqa: E402
 from yasli.models.address import Address, address_institutions  # noqa: E402
 from yasli.models.grao_address import GraoAddress  # noqa: E402
+from yasli.models.settlement import Settlement  # noqa: E402
 
 __all__ = [
     "Base",
@@ -29,9 +32,12 @@ __all__ = [
     "KIND_VALUES",
     "DistrictCode",
     "DISTRICT_CODE_VALUES",
+    "LocalityType",
+    "LOCALITY_TYPE_VALUES",
     "Institution",
     "Street",
     "Address",
     "address_institutions",
     "GraoAddress",
+    "Settlement",
 ]

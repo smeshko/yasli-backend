@@ -16,8 +16,16 @@ from pathlib import Path
 import pytest
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.engine import Engine
+from sqlalchemy.exc import IntegrityError
+
+from yasli.geo.settlements import VARNA_SETTLEMENTS
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+
+EXPECTED_SETTLEMENT_ROWS = {
+    settlement.code: (settlement.name, settlement.locality_type)
+    for settlement in VARNA_SETTLEMENTS
+}
 
 
 def _candidate_url() -> str | None:
@@ -110,7 +118,7 @@ def test_round_trip_upgrade_downgrade_upgrade(fresh_db: str) -> None:
     up1 = _alembic(["upgrade", "head"], url)
     assert up1.returncode == 0, up1.stderr
     eng = _engine(url)
-    assert _current_revision(eng) == "0005"
+    assert _current_revision(eng) == "0007"
     tables = _table_names(eng)
     assert {
         "institutions",
@@ -118,33 +126,41 @@ def test_round_trip_upgrade_downgrade_upgrade(fresh_db: str) -> None:
         "addresses",
         "address_institutions",
         "grao_addresses",
+        "settlements",
     }.issubset(tables)
     assert "address_entries" not in tables
     # The addresses.district_code column is present at head.
     addr_columns = {c["name"] for c in inspect(eng).get_columns("addresses")}
     assert "district_code" in addr_columns
+    assert "settlement_code" in addr_columns
     # The institutions.district_code column (from 0004) is also present.
     inst_columns = {c["name"] for c in inspect(eng).get_columns("institutions")}
     assert "district_code" in inst_columns
+    with eng.connect() as conn:
+        settlement_count = conn.execute(
+            text("SELECT count(*) FROM settlements")
+        ).scalar_one()
+    assert settlement_count == 6
     eng.dispose()
 
     down = _alembic(["downgrade", "-1"], url)
     assert down.returncode == 0, down.stderr
     eng = _engine(url)
-    assert _current_revision(eng) == "0004"
+    assert _current_revision(eng) == "0006"
     tables = _table_names(eng)
-    # 0004 shape: address-centric tables remain, grao_addresses gone,
-    # addresses.district_code gone, but institutions.district_code (from
-    # 0004) MUST remain.
+    # 0006 shape: settlement_code remains on addresses, and only the
+    # settlements table from revision 0007 is removed.
     assert {
         "institutions",
         "streets",
         "addresses",
         "address_institutions",
+        "grao_addresses",
     }.issubset(tables)
-    assert "grao_addresses" not in tables
+    assert "settlements" not in tables
     addr_columns = {c["name"] for c in inspect(eng).get_columns("addresses")}
-    assert "district_code" not in addr_columns
+    assert "district_code" in addr_columns
+    assert "settlement_code" in addr_columns
     inst_columns = {c["name"] for c in inspect(eng).get_columns("institutions")}
     assert "district_code" in inst_columns  # survives the downgrade
     eng.dispose()
@@ -152,7 +168,7 @@ def test_round_trip_upgrade_downgrade_upgrade(fresh_db: str) -> None:
     up2 = _alembic(["upgrade", "head"], url)
     assert up2.returncode == 0, up2.stderr
     eng = _engine(url)
-    assert _current_revision(eng) == "0005"
+    assert _current_revision(eng) == "0007"
     tables = _table_names(eng)
     assert {
         "institutions",
@@ -160,10 +176,154 @@ def test_round_trip_upgrade_downgrade_upgrade(fresh_db: str) -> None:
         "addresses",
         "address_institutions",
         "grao_addresses",
+        "settlements",
     }.issubset(tables)
     addr_columns = {c["name"] for c in inspect(eng).get_columns("addresses")}
     assert "district_code" in addr_columns
+    assert "settlement_code" in addr_columns
+    with eng.connect() as conn:
+        final_rows = conn.execute(
+            text("SELECT code, name, locality_type FROM settlements ORDER BY code")
+        ).all()
+    assert {
+        row.code: (row.name, row.locality_type) for row in final_rows
+    } == EXPECTED_SETTLEMENT_ROWS
     eng.dispose()
+
+
+def test_settlements_table_columns_constraints_and_defaults(fresh_db: str) -> None:
+    url = fresh_db
+    up = _alembic(["upgrade", "head"], url)
+    assert up.returncode == 0, up.stderr
+
+    eng = _engine(url)
+    try:
+        insp = inspect(eng)
+        assert "settlements" in insp.get_table_names()
+
+        columns = {c["name"]: c for c in insp.get_columns("settlements")}
+        assert set(columns) == {
+            "code",
+            "name",
+            "locality_type",
+            "municipality_code",
+            "municipality_name",
+            "source",
+        }
+        assert columns["code"]["nullable"] is False
+        assert columns["name"]["nullable"] is False
+        assert columns["locality_type"]["nullable"] is False
+        assert columns["municipality_code"]["nullable"] is False
+        assert columns["municipality_name"]["nullable"] is False
+        assert columns["source"]["nullable"] is False
+        assert columns["code"]["type"].length == 5
+        assert columns["name"]["type"].length == 64
+        assert columns["locality_type"]["type"].length == 16
+        assert columns["municipality_code"]["type"].length == 2
+        assert columns["municipality_name"]["type"].length == 64
+        assert columns["source"]["type"].length == 32
+
+        pk = insp.get_pk_constraint("settlements")
+        assert pk["constrained_columns"] == ["code"]
+        assert pk["name"] == "settlements_pkey"
+        check_names = {c["name"] for c in insp.get_check_constraints("settlements")}
+        assert "ck_settlements_locality_type" in check_names
+
+        with eng.begin() as conn, pytest.raises(IntegrityError):
+            conn.execute(
+                text(
+                    "INSERT INTO settlements (code, name, locality_type) "
+                    "VALUES ('10135', 'DUP', 'city')"
+                )
+            )
+
+        with eng.begin() as conn, pytest.raises(IntegrityError):
+            conn.execute(
+                text(
+                    "INSERT INTO settlements (code, name, locality_type) "
+                    "VALUES ('99990', 'BAD', 'town')"
+                )
+            )
+
+        with eng.begin() as conn:
+            row = conn.execute(
+                text(
+                    "INSERT INTO settlements (code, name, locality_type) "
+                    "VALUES ('99999', 'TEST', 'city') "
+                    "RETURNING municipality_code, municipality_name, source"
+                )
+            ).one()
+        assert tuple(row) == ("06", "ВАРНА", "grao_kads")
+    finally:
+        eng.dispose()
+
+
+def test_settlement_seed_rows_match_reference_data(fresh_db: str) -> None:
+    url = fresh_db
+    up = _alembic(["upgrade", "head"], url)
+    assert up.returncode == 0, up.stderr
+
+    eng = _engine(url)
+    try:
+        with eng.connect() as conn:
+            rows = conn.execute(
+                text(
+                    "SELECT code, name, locality_type, municipality_code, "
+                    "municipality_name, source FROM settlements ORDER BY code"
+                )
+            ).all()
+    finally:
+        eng.dispose()
+
+    assert len(rows) == 6
+    assert {
+        row.code: (row.name, row.locality_type) for row in rows
+    } == EXPECTED_SETTLEMENT_ROWS
+    assert sum(1 for row in rows if row.locality_type == "city") == 1
+    assert sum(1 for row in rows if row.locality_type == "village") == 5
+    assert {row.municipality_code for row in rows} == {"06"}
+    assert {row.municipality_name for row in rows} == {"ВАРНА"}
+    assert {row.source for row in rows} == {"grao_kads"}
+
+
+def test_address_settlement_code_joins_to_settlements(fresh_db: str) -> None:
+    url = fresh_db
+    up = _alembic(["upgrade", "head"], url)
+    assert up.returncode == 0, up.stderr
+
+    eng = _engine(url)
+    try:
+        with eng.begin() as conn:
+            street_id = conn.execute(
+                text(
+                    "INSERT INTO streets (city, raw_name, street_part, "
+                    "type_marker, search_norm) "
+                    "VALUES ('С.КАМЕНАР', 'С.КАМЕНАР УЛ. ТЕСТ', "
+                    "'ТЕСТ', 'УЛ.', 's.kamenar test') RETURNING id"
+                )
+            ).scalar_one()
+            address_id = conn.execute(
+                text(
+                    "INSERT INTO addresses "
+                    "(street_id, number_int, settlement_code) "
+                    "VALUES (:street_id, 1, '35701') RETURNING id"
+                ),
+                {"street_id": street_id},
+            ).scalar_one()
+
+        with eng.connect() as conn:
+            row = conn.execute(
+                text(
+                    "SELECT s.code, s.name, s.locality_type "
+                    "FROM addresses a "
+                    "JOIN settlements s ON s.code = a.settlement_code "
+                    "WHERE a.id = :address_id"
+                ),
+                {"address_id": address_id},
+            ).one()
+        assert tuple(row) == ("35701", "С.КАМЕНАР", "village")
+    finally:
+        eng.dispose()
 
 
 def test_institutions_metadata_columns_and_constraint(fresh_db: str) -> None:

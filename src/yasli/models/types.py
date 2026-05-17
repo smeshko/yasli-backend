@@ -5,6 +5,7 @@
 contract. `DistrictCode` mirrors the closed value set of Varna's 5
 administrative районs, used by both `institutions.district_code` (added by
 revision `0004`) and `addresses.district_code` (added by revision `0005`).
+`LocalityType` mirrors the closed city/village set of `settlements`.
 
 Keeping these here (rather than next to the ORM classes) lets ingest and
 the read endpoints import the aliases without pulling in the ORM classes.
@@ -22,9 +23,15 @@ DistrictCode = Literal["01", "02", "03", "04", "05"]
 
 DISTRICT_CODE_VALUES: tuple[str, ...] = ("01", "02", "03", "04", "05")
 
+LocalityType = Literal["city", "village"]
+
+LOCALITY_TYPE_VALUES: tuple[str, ...] = ("city", "village")
+
 __all__ = [
     "Kind",
     "KIND_VALUES",
     "DistrictCode",
     "DISTRICT_CODE_VALUES",
+    "LocalityType",
+    "LOCALITY_TYPE_VALUES",
 ]
