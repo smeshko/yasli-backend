@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import pytest
@@ -33,6 +34,31 @@ def _enum_values(openapi: dict[str, Any], schema: dict[str, Any]) -> set[str]:
         for item in schema.get(key, []):
             values.update(_enum_values(openapi, item))
     return values
+
+
+def _walk_schemas(
+    openapi: dict[str, Any],
+    schema: dict[str, Any],
+    seen: set[str] | None = None,
+):
+    if seen is None:
+        seen = set()
+    if "$ref" in schema:
+        name = schema["$ref"].rsplit("/", 1)[-1]
+        if name in seen:
+            return
+        seen.add(name)
+        schema = openapi["components"]["schemas"][name]
+
+    yield schema
+
+    for prop_schema in schema.get("properties", {}).values():
+        yield from _walk_schemas(openapi, prop_schema, seen)
+    if "items" in schema:
+        yield from _walk_schemas(openapi, schema["items"], seen)
+    for key in ("anyOf", "oneOf", "allOf"):
+        for item in schema.get(key, []):
+            yield from _walk_schemas(openapi, item, seen)
 
 
 def test_match_operation_declares_address_id_and_kind_parameters(openapi: dict[str, Any]) -> None:
@@ -122,3 +148,74 @@ def test_match_item_schema_carries_six_fields_including_match_type(
         "district",
     }
     assert item_schema["properties"]["has_infant_group"]["type"] == "boolean"
+
+
+def test_match_v2_operation_declares_address_id_and_kind_parameters(
+    openapi: dict[str, Any],
+) -> None:
+    op = openapi["paths"]["/api/match/v2"]["get"]
+    params = {p["name"]: p for p in op.get("parameters", []) if p.get("in") == "query"}
+
+    assert set(params.keys()) == {"address_id", "kind"}
+    address_id = params["address_id"]
+    assert address_id["required"] is True
+    assert address_id["schema"]["type"] == "integer"
+    assert address_id["schema"]["minimum"] == 1
+
+    kind = params["kind"]
+    assert kind["required"] is False
+    assert _enum_values(openapi, kind["schema"]) == EXPECTED_KINDS
+
+
+def test_match_v2_response_is_stable_object_schema(openapi: dict[str, Any]) -> None:
+    op = openapi["paths"]["/api/match/v2"]["get"]
+    schema = op["responses"]["200"]["content"]["application/json"]["schema"]
+    root = _resolve_schema(openapi, schema)
+
+    assert root["type"] == "object"
+    assert set(root["properties"].keys()) == {"address", "results"}
+    assert "oneOf" not in root
+    assert "anyOf" not in root
+
+    address = _resolve_schema(openapi, root["properties"]["address"])
+    assert set(address["properties"].keys()) == {
+        "id",
+        "district_code",
+        "settlement",
+    }
+
+    results = _resolve_schema(openapi, root["properties"]["results"])
+    assert results["type"] == "array"
+    item = _resolve_schema(openapi, results["items"])
+    assert set(item["properties"].keys()) == {
+        "id",
+        "external_id",
+        "name",
+        "institution_kind",
+        "source_url",
+        "match_basis",
+        "has_infant_group",
+    }
+    assert _enum_values(openapi, item["properties"]["institution_kind"]) == EXPECTED_KINDS
+    assert _enum_values(openapi, item["properties"]["match_basis"]) == {
+        "address",
+        "district",
+    }
+
+
+def test_match_v2_response_schema_does_not_expose_legacy_shapes(
+    openapi: dict[str, Any],
+) -> None:
+    op = openapi["paths"]["/api/match/v2"]["get"]
+    schema = op["responses"]["200"]["content"]["application/json"]["schema"]
+    root = _resolve_schema(openapi, schema)
+
+    assert root.get("type") != "array"
+    serialized = json.dumps(
+        list(_walk_schemas(openapi, schema)),
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+    assert "district_unknown" not in serialized
+    assert "settlement_only" not in serialized
+    assert "match_type" not in serialized

@@ -14,7 +14,14 @@ from sqlalchemy.pool import StaticPool
 
 from yasli import db
 from yasli.main import app
-from yasli.models import Address, Base, Institution, Street, address_institutions
+from yasli.models import (
+    Address,
+    Base,
+    Institution,
+    Settlement,
+    Street,
+    address_institutions,
+)
 from yasli.routes import match as match_module
 
 
@@ -40,7 +47,8 @@ def _seed_fixture(_client: TestClient) -> None:
     Districts: addresses 1 + 2 are in '01' (Одесос); address 3 is in '02'
     (Приморски); address 4 has both district_code and settlement_code
     NULL (truly unrecognised); address 5 is in a Varna village with
-    settlement_code set but district_code NULL (the village fallback case).
+    settlement_code set but district_code NULL (the village fallback case);
+    address 6 is a district-null ГР.ВАРНА row with settlement context.
 
     Institutions:
       N1 — nursery, district='01' (only via district routing)
@@ -66,6 +74,20 @@ def _seed_fixture(_client: TestClient) -> None:
                 type_marker="ул.",
                 search_norm="test",
             )
+        )
+        session.add_all(
+            [
+                Settlement(
+                    code="10135",
+                    name="ГР.ВАРНА",
+                    locality_type="city",
+                ),
+                Settlement(
+                    code="35701",
+                    name="С.КАМЕНАР",
+                    locality_type="village",
+                ),
+            ]
         )
         session.add_all(
             [
@@ -103,6 +125,13 @@ def _seed_fixture(_client: TestClient) -> None:
                     number_int=5,
                     district_code=None,
                     settlement_code="35701",  # с. Каменар
+                ),
+                Address(
+                    id=6,
+                    street_id=1,
+                    number_int=6,
+                    district_code=None,
+                    settlement_code="10135",
                 ),
             ]
         )
@@ -190,6 +219,7 @@ def _seed_fixture(_client: TestClient) -> None:
                 {"address_id": 1, "institution_id": 4},
                 {"address_id": 2, "institution_id": 4},
                 {"address_id": 3, "institution_id": 5},
+                {"address_id": 6, "institution_id": 4},
                 # P2's building is at address 1 (район 01) but its
                 # catchment-majority is район 02 — the new routing must
                 # use institutions.district_code, not this junction edge.
@@ -481,6 +511,166 @@ def test_ordering_is_kind_then_name(client: TestClient) -> None:
     body = client.get("/api/match?address_id=1").json()
     keys = [(item["kind"], item["name"]) for item in body]
     assert keys == sorted(keys)
+
+
+def test_v2_district_known_returns_structured_object_with_mixed_results(
+    client: TestClient,
+) -> None:
+    _seed_fixture(client)
+    resp = client.get("/api/match/v2?address_id=1")
+    assert resp.status_code == 200
+    body = resp.json()
+
+    assert set(body.keys()) == {"address", "results"}
+    assert body["address"] == {
+        "id": 1,
+        "district_code": "01",
+        "settlement": {
+            "code": "10135",
+            "name": "ГР.ВАРНА",
+            "locality_type": "city",
+        },
+    }
+
+    by_external = {r["external_id"]: r for r in body["results"]}
+    assert set(by_external) == {"K1", "N1", "P2"}
+    assert by_external["K1"]["match_basis"] == "address"
+    assert by_external["N1"]["match_basis"] == "district"
+    assert by_external["P2"]["match_basis"] == "address"
+    assert by_external["K1"]["has_infant_group"] is True
+    for item in body["results"]:
+        assert set(item.keys()) == {
+            "id",
+            "external_id",
+            "name",
+            "institution_kind",
+            "source_url",
+            "match_basis",
+            "has_infant_group",
+        }
+        assert "kind" not in item
+        assert "match_type" not in item
+
+
+def test_v2_village_address_returns_settlement_context_without_envelope(
+    client: TestClient,
+) -> None:
+    _seed_fixture(client)
+    resp = client.get("/api/match/v2?address_id=5")
+    assert resp.status_code == 200
+    body = resp.json()
+
+    assert set(body.keys()) == {"address", "results"}
+    assert body["address"]["district_code"] is None
+    assert body["address"]["settlement"] == {
+        "code": "35701",
+        "name": "С.КАМЕНАР",
+        "locality_type": "village",
+    }
+    assert "district_unknown" not in resp.text
+    assert "settlement_only" not in resp.text
+
+
+def test_v2_district_null_city_returns_city_context_without_envelope(
+    client: TestClient,
+) -> None:
+    _seed_fixture(client)
+    resp = client.get("/api/match/v2?address_id=6")
+    assert resp.status_code == 200
+    body = resp.json()
+
+    assert set(body.keys()) == {"address", "results"}
+    assert body["address"]["district_code"] is None
+    assert body["address"]["settlement"] == {
+        "code": "10135",
+        "name": "ГР.ВАРНА",
+        "locality_type": "city",
+    }
+    assert "district_unknown" not in resp.text
+    assert "settlement_only" not in resp.text
+
+
+def test_v2_address_without_settlement_reference_returns_null_settlement(
+    client: TestClient,
+) -> None:
+    _seed_fixture(client)
+    resp = client.get("/api/match/v2?address_id=4")
+    assert resp.status_code == 200
+    body = resp.json()
+
+    assert body["address"] == {
+        "id": 4,
+        "district_code": None,
+        "settlement": None,
+    }
+    assert set(body.keys()) == {"address", "results"}
+
+
+def test_v2_kindergarten_filter_works_without_district_context(
+    client: TestClient,
+) -> None:
+    _seed_fixture(client)
+    resp = client.get("/api/match/v2?address_id=6&kind=kindergarten")
+    assert resp.status_code == 200
+    body = resp.json()
+
+    assert {r["external_id"] for r in body["results"]} == {"K1"}
+    assert all(r["institution_kind"] == "kindergarten" for r in body["results"])
+    assert all(r["match_basis"] == "address" for r in body["results"])
+
+
+def test_v2_nursery_and_preschool_routing_semantics(
+    client: TestClient,
+) -> None:
+    _seed_fixture(client)
+
+    nursery = client.get("/api/match/v2?address_id=1&kind=nursery").json()
+    assert {r["external_id"] for r in nursery["results"]} == {"N1"}
+    assert all(r["institution_kind"] == "nursery" for r in nursery["results"])
+    assert all(r["match_basis"] == "district" for r in nursery["results"])
+
+    preschool_junction = client.get(
+        "/api/match/v2?address_id=1&kind=preschool"
+    ).json()
+    assert {r["external_id"] for r in preschool_junction["results"]} == {"P2"}
+    assert all(r["match_basis"] == "address" for r in preschool_junction["results"])
+
+    preschool_fallback = client.get(
+        "/api/match/v2?address_id=2&kind=preschool"
+    ).json()
+    assert {r["external_id"] for r in preschool_fallback["results"]} == {"P1"}
+    assert all(r["match_basis"] == "district" for r in preschool_fallback["results"])
+
+
+def test_v2_ordering_is_stable_and_kind_then_name(client: TestClient) -> None:
+    _seed_fixture(client)
+    first = client.get("/api/match/v2?address_id=1")
+    second = client.get("/api/match/v2?address_id=1")
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert first.content == second.content
+
+    body = first.json()
+    keys = [(item["institution_kind"], item["name"]) for item in body["results"]]
+    assert keys == sorted(keys)
+
+
+def test_v2_unknown_address_id_returns_404(client: TestClient) -> None:
+    _seed_fixture(client)
+    resp = client.get("/api/match/v2?address_id=999999")
+    assert resp.status_code == 404
+    assert resp.json() == {"error": "address_not_found"}
+
+
+def test_v2_missing_address_id_returns_422(client: TestClient) -> None:
+    resp = client.get("/api/match/v2")
+    assert resp.status_code == 422
+
+
+def test_v2_invalid_kind_returns_422(client: TestClient) -> None:
+    _seed_fixture(client)
+    resp = client.get("/api/match/v2?address_id=1&kind=infant")
+    assert resp.status_code == 422
 
 
 def test_database_error_returns_503(caplog: pytest.LogCaptureFixture) -> None:
