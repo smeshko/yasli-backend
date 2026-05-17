@@ -37,6 +37,7 @@ from yasli.ingest.parser import (
     UnparseableNumber,
     parse_number,
 )
+from yasli.geo.settlements import VARNA_SETTLEMENTS
 
 log = logging.getLogger("yasli.ingest.district_stamp")
 
@@ -52,23 +53,6 @@ class AddressesStampSummary:
     remaining_null: int = 0
     null_sample: list[str] = field(default_factory=list)
     settlement_stamped: int = 0
-
-
-# Settlements in Bulgarian's община Варна, mapped to their 5-digit ГРАО
-# settlement codes. The list is closed (Varna municipality has exactly
-# six populated places) and stable across cycles, so we hard-code it
-# rather than re-derive from grao_addresses — the loader strips the
-# village header lines (they have no район) before they reach
-# grao_addresses, so we cannot recover village codes from there.
-_VARNA_SETTLEMENTS: tuple[tuple[str, str, str], ...] = (
-    # (raw-name LIKE pattern with space, LIKE without space, code)
-    ("ГР.ВАРНА%", "ГР. ВАРНА%", "10135"),
-    ("С.КАМЕНАР%", "С. КАМЕНАР%", "35701"),
-    ("С.ТОПОЛИ%", "С. ТОПОЛИ%", "72709"),
-    ("С.ЗВЕЗДИЦА%", "С. ЗВЕЗДИЦА%", "30497"),
-    ("С.КОНСТАНТИНОВО%", "С. КОНСТАНТИНОВО%", "38354"),
-    ("С.КАЗАШКО%", "С. КАЗАШКО%", "35211"),
-)
 
 
 @dataclass
@@ -186,10 +170,13 @@ def _settlement_case_sql() -> str:
     scraper emit (``С.КАМЕНАР`` and ``С. КАМЕНАР``).
     """
     branches = []
-    for pat_nospace, pat_space, code in _VARNA_SETTLEMENTS:
+    for settlement in VARNA_SETTLEMENTS:
+        conditions = " OR ".join(
+            f"s.raw_name LIKE '{pattern}'"
+            for pattern in settlement.raw_name_patterns
+        )
         branches.append(
-            f"WHEN s.raw_name LIKE '{pat_nospace}' "
-            f"OR s.raw_name LIKE '{pat_space}' THEN '{code}'"
+            f"WHEN {conditions} THEN '{settlement.code}'"
         )
     return "CASE " + " ".join(branches) + " ELSE NULL END"
 

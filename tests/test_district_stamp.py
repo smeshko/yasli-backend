@@ -18,6 +18,7 @@ from sqlalchemy import create_engine, insert, select
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
+from yasli.geo.settlements import VARNA_SETTLEMENTS
 from yasli.ingest import district_stamp
 from yasli.models import (
     Address,
@@ -65,6 +66,7 @@ def _add_address(
     number_suffix: str | None = None,
     entrance: str | None = None,
     district_code: str | None = None,
+    settlement_code: str | None = None,
 ) -> None:
     session.add(
         Address(
@@ -74,6 +76,7 @@ def _add_address(
             number_suffix=number_suffix,
             entrance=entrance,
             district_code=district_code,
+            settlement_code=settlement_code,
         )
     )
 
@@ -361,6 +364,61 @@ def test_non_gated_restamp_overwrites_existing_stamp(session: Session) -> None:
     assert summary.primary_stamped == 1
     a = session.execute(select(Address).where(Address.id == 10)).scalar_one()
     assert a.district_code == "03"
+
+
+def test_settlement_case_sql_covers_configured_reference_data() -> None:
+    sql = district_stamp._settlement_case_sql()
+
+    assert sql.startswith("CASE ")
+    assert sql.endswith(" ELSE NULL END")
+    assert sql.count("WHEN ") == len(VARNA_SETTLEMENTS)
+    for settlement in VARNA_SETTLEMENTS:
+        for pattern in settlement.raw_name_patterns:
+            assert f"s.raw_name LIKE '{pattern}'" in sql
+        assert f"THEN '{settlement.code}'" in sql
+
+
+def test_gated_settlement_pass_only_fills_null_settlement_code(
+    session: Session,
+) -> None:
+    _add_street(session, id=1, search_norm="kamenar", raw="С.КАМЕНАР УЛ. Х")
+    _add_address(session, id=10, street_id=1, number_int=1)
+    _add_address(
+        session,
+        id=11,
+        street_id=1,
+        number_int=2,
+        settlement_code="99999",
+    )
+    session.commit()
+
+    summary = district_stamp.stamp_addresses_unmatched(session)
+    session.commit()
+
+    assert summary.settlement_stamped == 1
+    rows = session.execute(select(Address).order_by(Address.id)).scalars().all()
+    assert [row.settlement_code for row in rows] == ["35701", "99999"]
+
+
+def test_non_gated_settlement_pass_recomputes_all_settlement_codes(
+    session: Session,
+) -> None:
+    _add_street(session, id=1, search_norm="kamenar", raw="С. КАМЕНАР УЛ. Х")
+    _add_address(
+        session,
+        id=10,
+        street_id=1,
+        number_int=1,
+        settlement_code="99999",
+    )
+    session.commit()
+
+    summary = district_stamp.restamp_addresses_all(session)
+    session.commit()
+
+    assert summary.settlement_stamped == 1
+    address = session.execute(select(Address).where(Address.id == 10)).scalar_one()
+    assert address.settlement_code == "35701"
 
 
 # ---------------------------------------------------------------------------
