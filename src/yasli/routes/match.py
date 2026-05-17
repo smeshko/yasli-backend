@@ -90,6 +90,8 @@ class MatchResult(BaseModel):
     external_id: str
     name: str
     institution_kind: Kind
+    reception_kind: Kind
+    offering: Literal["standard", "infant_group"]
     source_url: str
     match_basis: Literal["address", "district"]
     has_infant_group: bool
@@ -151,22 +153,71 @@ def _address_response(address: AddressContext) -> MatchAddressContext:
     )
 
 
-def _structured_row(row: MatchedInstitution) -> MatchResult:
+_RECEPTION_KIND_ORDER: dict[Kind, int] = {
+    "nursery": 0,
+    "kindergarten": 1,
+    "preschool": 2,
+}
+
+
+def _structured_standard_row(row: MatchedInstitution) -> MatchResult:
     return MatchResult(
         id=row.id,
         external_id=row.external_id,
         name=row.name,
         institution_kind=row.institution_kind,
+        reception_kind=row.institution_kind,
+        offering="standard",
         source_url=row.source_url,
         match_basis=row.match_basis,
         has_infant_group=row.has_infant_group,
     )
 
 
+def _structured_infant_group_row(row: MatchedInstitution) -> MatchResult:
+    return MatchResult(
+        id=row.id,
+        external_id=row.external_id,
+        name=row.name,
+        institution_kind=row.institution_kind,
+        reception_kind="nursery",
+        offering="infant_group",
+        source_url=row.source_url,
+        match_basis=row.match_basis,
+        has_infant_group=row.has_infant_group,
+    )
+
+
+def _structured_rows(row: MatchedInstitution) -> list[MatchResult]:
+    results = [_structured_standard_row(row)]
+    if (
+        row.institution_kind == "kindergarten"
+        and row.has_infant_group
+        and row.match_basis == "address"
+    ):
+        results.append(_structured_infant_group_row(row))
+    return results
+
+
+def _structured_sort_key(row: MatchResult) -> tuple[int, str, Kind, str]:
+    return (
+        _RECEPTION_KIND_ORDER[row.reception_kind],
+        row.name,
+        row.institution_kind,
+        row.offering,
+    )
+
+
 def _structured_response(match_set: MatchSet) -> StructuredMatchResponse:
+    results = [
+        result
+        for row in match_set.results
+        for result in _structured_rows(row)
+    ]
+    results.sort(key=_structured_sort_key)
     return StructuredMatchResponse(
         address=_address_response(match_set.address),
-        results=[_structured_row(row) for row in match_set.results],
+        results=results,
     )
 
 

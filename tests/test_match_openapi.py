@@ -192,11 +192,18 @@ def test_match_v2_response_is_stable_object_schema(openapi: dict[str, Any]) -> N
         "external_id",
         "name",
         "institution_kind",
+        "reception_kind",
+        "offering",
         "source_url",
         "match_basis",
         "has_infant_group",
     }
     assert _enum_values(openapi, item["properties"]["institution_kind"]) == EXPECTED_KINDS
+    assert _enum_values(openapi, item["properties"]["reception_kind"]) == EXPECTED_KINDS
+    assert _enum_values(openapi, item["properties"]["offering"]) == {
+        "standard",
+        "infant_group",
+    }
     assert _enum_values(openapi, item["properties"]["match_basis"]) == {
         "address",
         "district",

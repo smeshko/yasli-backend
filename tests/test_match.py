@@ -532,24 +532,61 @@ def test_v2_district_known_returns_structured_object_with_mixed_results(
         },
     }
 
-    by_external = {r["external_id"]: r for r in body["results"]}
-    assert set(by_external) == {"K1", "N1", "P2"}
-    assert by_external["K1"]["match_basis"] == "address"
-    assert by_external["N1"]["match_basis"] == "district"
-    assert by_external["P2"]["match_basis"] == "address"
-    assert by_external["K1"]["has_infant_group"] is True
+    by_reception = {
+        (r["external_id"], r["reception_kind"], r["offering"]): r
+        for r in body["results"]
+    }
+    assert set(by_reception) == {
+        ("K1", "nursery", "infant_group"),
+        ("N1", "nursery", "standard"),
+        ("K1", "kindergarten", "standard"),
+        ("P2", "preschool", "standard"),
+    }
+    assert by_reception[("K1", "kindergarten", "standard")]["match_basis"] == "address"
+    assert by_reception[("K1", "nursery", "infant_group")]["match_basis"] == "address"
+    assert by_reception[("N1", "nursery", "standard")]["match_basis"] == "district"
+    assert by_reception[("P2", "preschool", "standard")]["match_basis"] == "address"
+    assert by_reception[("K1", "kindergarten", "standard")]["has_infant_group"] is True
+    assert by_reception[("K1", "nursery", "infant_group")]["has_infant_group"] is True
     for item in body["results"]:
         assert set(item.keys()) == {
             "id",
             "external_id",
             "name",
             "institution_kind",
+            "reception_kind",
+            "offering",
             "source_url",
             "match_basis",
             "has_infant_group",
         }
         assert "kind" not in item
         assert "match_type" not in item
+
+
+def test_v2_kindergarten_without_infant_group_emits_only_kindergarten_reception(
+    client: TestClient,
+) -> None:
+    _seed_fixture(client)
+    body = client.get("/api/match/v2?address_id=3&kind=kindergarten").json()
+
+    assert [
+        (r["external_id"], r["institution_kind"], r["reception_kind"], r["offering"])
+        for r in body["results"]
+    ] == [("K2", "kindergarten", "kindergarten", "standard")]
+
+
+def test_v2_reception_rows_have_stable_composite_identity(
+    client: TestClient,
+) -> None:
+    _seed_fixture(client)
+    body = client.get("/api/match/v2?address_id=1").json()
+    keys = [
+        (r["reception_kind"], r["institution_kind"], r["offering"], r["id"])
+        for r in body["results"]
+    ]
+
+    assert len(keys) == len(set(keys))
 
 
 def test_v2_village_address_returns_settlement_context_without_envelope(
@@ -617,6 +654,12 @@ def test_v2_kindergarten_filter_works_without_district_context(
     assert {r["external_id"] for r in body["results"]} == {"K1"}
     assert all(r["institution_kind"] == "kindergarten" for r in body["results"])
     assert all(r["match_basis"] == "address" for r in body["results"])
+    assert {
+        (r["reception_kind"], r["offering"]) for r in body["results"]
+    } == {
+        ("nursery", "infant_group"),
+        ("kindergarten", "standard"),
+    }
 
 
 def test_v2_nursery_and_preschool_routing_semantics(
@@ -627,6 +670,8 @@ def test_v2_nursery_and_preschool_routing_semantics(
     nursery = client.get("/api/match/v2?address_id=1&kind=nursery").json()
     assert {r["external_id"] for r in nursery["results"]} == {"N1"}
     assert all(r["institution_kind"] == "nursery" for r in nursery["results"])
+    assert all(r["reception_kind"] == "nursery" for r in nursery["results"])
+    assert all(r["offering"] == "standard" for r in nursery["results"])
     assert all(r["match_basis"] == "district" for r in nursery["results"])
 
     preschool_junction = client.get(
@@ -651,8 +696,20 @@ def test_v2_ordering_is_stable_and_kind_then_name(client: TestClient) -> None:
     assert first.content == second.content
 
     body = first.json()
-    keys = [(item["institution_kind"], item["name"]) for item in body["results"]]
-    assert keys == sorted(keys)
+    keys = [
+        (
+            item["reception_kind"],
+            item["name"],
+            item["institution_kind"],
+            item["offering"],
+        )
+        for item in body["results"]
+    ]
+    kind_order = {"nursery": 0, "kindergarten": 1, "preschool": 2}
+    assert keys == sorted(
+        keys,
+        key=lambda item: (kind_order[item[0]], item[1], item[2], item[3]),
+    )
 
 
 def test_v2_unknown_address_id_returns_404(client: TestClient) -> None:
