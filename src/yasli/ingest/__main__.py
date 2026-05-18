@@ -29,6 +29,10 @@ from yasli.ingest.district_stamp import (
     restamp_addresses_all,
     restamp_institutions_all,
 )
+from yasli.ingest.match_data_validation import (
+    format_match_data_validation_result,
+    validate_match_data,
+)
 
 
 def _validate_startup_config(*, require_r2: bool) -> None:
@@ -123,13 +127,35 @@ def _run_restamp_districts_subcommand() -> int:
     return 0
 
 
+def _run_validate_match_data_subcommand() -> int:
+    try:
+        _validate_startup_config(require_r2=False)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+    try:
+        engine = get_engine()
+        with Session(engine) as session:
+            result = validate_match_data(session)
+    except SQLAlchemyError as exc:
+        print(f"error: database error: {exc}", file=sys.stderr)
+        return 5
+
+    print(format_match_data_validation_result(result), flush=True)
+    if result.has_hard_failures:
+        return 1
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="yasli.ingest",
         description=(
             "Pull snapshots/varna/latest.json from R2 and upsert into "
             "Postgres in one transaction (default), or run non-gated "
-            "district-stamping passes (restamp-districts subcommand)."
+            "district-stamping passes (restamp-districts subcommand), or "
+            "validate match data assumptions."
         ),
     )
     subparsers = parser.add_subparsers(dest="cmd")
@@ -143,12 +169,18 @@ def main(argv: list[str] | None = None) -> int:
             "Invoked manually after a quarterly ГРАО reload."
         ),
     )
+    subparsers.add_parser(
+        "validate-match-data",
+        help="Read-only validation of match-routing data assumptions.",
+    )
     args = parser.parse_args(argv)
 
     if args.cmd is None or args.cmd == "ingest":
         return _run_ingest_subcommand()
     if args.cmd == "restamp-districts":
         return _run_restamp_districts_subcommand()
+    if args.cmd == "validate-match-data":
+        return _run_validate_match_data_subcommand()
     parser.error(f"unknown subcommand: {args.cmd}")
     return 2  # pragma: no cover - parser.error exits
 

@@ -89,7 +89,6 @@ All routes under `/api`, JSON responses, GETs only.
 | `GET /api/institutions` | All institutions in browse order. ETag + 1h Cache-Control. |
 | `GET /api/institutions/{id}` | One institution profile + served addresses grouped by street. |
 | `GET /api/match?address_id={id}&kind={…}` | Canonical structured match response: `{address, results}`. `address` carries `district_code` and settlement context; each result carries institution/reception kind, offering, source URL, `match_basis`, and `has_infant_group`. |
-| `GET /api/match/v2?address_id={id}&kind={…}` | Temporary structured alias for `/api/match` during the cleanup release. |
 
 ETags are content-derived strong tags; clients revalidate with `If-None-Match` for 304s.
 

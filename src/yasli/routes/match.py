@@ -1,10 +1,7 @@
-"""GET /match and /match/v2 institution coverage endpoints.
+"""GET /match institution coverage endpoint.
 
 Mounted under ``/api`` by ``yasli.main``, so the public paths are
-``/api/match`` and ``/api/match/v2``.
-
-``/api/match`` is the canonical structured endpoint. ``/api/match/v2`` remains
-as a temporary alias during the cleanup release.
+``/api/match``.
 
 Unknown ``address_id`` returns ``404 {"error": "address_not_found"}`` so the
 frontend can distinguish a stale local cache from a kind-filtered empty result.
@@ -161,15 +158,6 @@ def _match_response(
 
 @router.get("/match", response_model=StructuredMatchResponse)
 def match(
-    address_id: int = Query(..., ge=1, description="addresses.id"),
-    kind: Kind | None = Query(None, description="Filter by institution kind"),
-    session: Session = Depends(get_db),
-) -> StructuredMatchResponse | JSONResponse:
-    return _match_response(session, address_id, kind)
-
-
-@router.get("/match/v2", response_model=StructuredMatchResponse)
-def structured_match(
     address_id: int = Query(..., ge=1, description="addresses.id"),
     kind: Kind | None = Query(None, description="Filter by institution kind"),
     session: Session = Depends(get_db),

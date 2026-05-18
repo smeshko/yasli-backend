@@ -39,12 +39,6 @@ def test_match_operation_declares_address_id_and_kind_parameters(openapi: dict[s
     _assert_match_parameters(openapi, "/api/match")
 
 
-def test_match_v2_operation_declares_address_id_and_kind_parameters(
-    openapi: dict[str, Any],
-) -> None:
-    _assert_match_parameters(openapi, "/api/match/v2")
-
-
 def _assert_match_parameters(openapi: dict[str, Any], path: str) -> None:
     op = openapi["paths"][path]["get"]
     params = {p["name"]: p for p in op.get("parameters", []) if p.get("in") == "query"}
@@ -62,22 +56,6 @@ def _assert_match_parameters(openapi: dict[str, Any], path: str) -> None:
 
 def test_match_response_is_stable_object_schema(openapi: dict[str, Any]) -> None:
     _assert_structured_response_schema(openapi, "/api/match")
-
-
-def test_match_v2_response_is_stable_object_schema(openapi: dict[str, Any]) -> None:
-    _assert_structured_response_schema(openapi, "/api/match/v2")
-
-
-def test_match_v2_response_schema_matches_canonical_match(
-    openapi: dict[str, Any],
-) -> None:
-    canonical = openapi["paths"]["/api/match"]["get"]["responses"]["200"]["content"][
-        "application/json"
-    ]["schema"]
-    alias = openapi["paths"]["/api/match/v2"]["get"]["responses"]["200"]["content"][
-        "application/json"
-    ]["schema"]
-    assert alias == canonical
 
 
 def _assert_structured_response_schema(openapi: dict[str, Any], path: str) -> None:
@@ -121,17 +99,27 @@ def _assert_structured_response_schema(openapi: dict[str, Any], path: str) -> No
         "address",
         "district",
     }
-    assert "match_basis" in item["required"]
+    assert {
+        "institution_kind",
+        "reception_kind",
+        "offering",
+        "source_url",
+        "match_basis",
+        "has_infant_group",
+    }.issubset(set(item["required"]))
 
 
-@pytest.mark.parametrize("path", ["/api/match", "/api/match/v2"])
 def test_match_response_schema_has_no_alternative_success_shapes(
-    openapi: dict[str, Any], path: str
+    openapi: dict[str, Any],
 ) -> None:
-    op = openapi["paths"][path]["get"]
+    op = openapi["paths"]["/api/match"]["get"]
     schema = op["responses"]["200"]["content"]["application/json"]["schema"]
     root = _resolve_schema(openapi, schema)
 
     assert root.get("type") != "array"
     assert "oneOf" not in root
     assert "anyOf" not in root
+
+
+def test_match_v2_path_is_absent_from_openapi(openapi: dict[str, Any]) -> None:
+    assert "/api/match/v2" not in openapi["paths"]
