@@ -115,6 +115,21 @@ confirm the expected nurseries + preschools come back. Spot-check at
 least one village address — it should return structured `{address, results}`
 with `address.district_code = null` and settlement context.
 
+### Match-data validation
+
+Run the read-only validation before and after ingest/restamp work:
+
+```bash
+python -m yasli.ingest validate-match-data
+
+# Expected first line:
+# match data validation ok
+```
+
+Hard failures exit non-zero and include a `failures={...}` line. Warnings
+stay exit 0; they cover allowed but important states such as Varna-city
+addresses without a district stamp.
+
 ### Rollback
 
 If a reload produces obviously wrong stamps (e.g. mass NULLs, wrong

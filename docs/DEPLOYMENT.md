@@ -270,8 +270,9 @@ Recommended deploy order:
    12 preschools.
 9. Resume the weekly cron services.
 
-This change does not alter `/api/match`; district-based nursery routing
-remains blocked until `add-grao-district-routing` lands.
+Current backend releases route nurseries by district through structured
+`/api/match`. After ingest or restamp work, run `validate-match-data` and
+spot-check a few `/api/match` responses.
 
 ### Manual run procedure
 

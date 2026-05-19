@@ -50,7 +50,7 @@ The backend is the only writer to Postgres and the only reader of R2. The fronte
 | `routes/` | One module per resource: `health`, `streets`, `addresses`, `match`, `institutions`. |
 | `models/` | ORM classes — `Institution`, `Street`, `Address`, `GraoAddress`, + `address_institutions` junction. |
 | `snapshot_contract/` | Vendored Pydantic v2 models matching the scraper's snapshot schema. Source of truth for ingest validation. |
-| `ingest/` | CLI entrypoint, R2 client, pipeline orchestrator, house-number parser, street normaliser, district-stamping passes. |
+| `ingest/` | CLI entrypoint, R2 client, pipeline orchestrator, house-number parser, street normaliser, district-stamping passes, match-data validation. |
 
 ### `migrations/`
 
@@ -60,7 +60,7 @@ Alembic, currently at revision `0005`. The schema is address-centric: catchments
 
 - `ARCHITECTURE.md` (this file)
 - `DEPLOYMENT.md` — Railway setup, services, plugins, migrations
-- `OPERATIONS.md` — quarterly GRAO restamp procedure
+- `OPERATIONS.md` — quarterly GRAO restamp + match-data validation procedures
 
 ## Data model
 
@@ -103,7 +103,12 @@ ETags are content-derived strong tags; clients revalidate with `If-None-Match` f
 5. Run gated stamping passes: address `district_code` (ГРАО join + entrance / street fallbacks), address `settlement_code` (raw-name prefix → 5-digit code for ГР.ВАРНА + the 5 villages), then KG/PG `district_code` (catchment-majority + address-parse fallback). Nurseries are scraper-stamped and skipped.
 6. Log structured stats: inserted/updated counts, elapsed ms.
 
-Subcommand `python -m yasli.ingest restamp-districts` propagates GRAO reassignments after a quarterly KADS reload — no R2 fetch needed. See `docs/OPERATIONS.md`.
+Subcommands:
+
+- `python -m yasli.ingest restamp-districts` — propagate GRAO reassignments after a quarterly KADS reload; no R2 fetch.
+- `python -m yasli.ingest validate-match-data` — read-only check for match-routing assumptions.
+
+See `docs/OPERATIONS.md`.
 
 ## Frontend contract
 
