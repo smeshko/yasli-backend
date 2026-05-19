@@ -21,8 +21,7 @@ from yasli.db import get_db
 from yasli.models.types import DistrictCode, Kind, LocalityType
 from yasli.services.matching import (
     AddressContext,
-    MatchedInstitution,
-    MatchSet,
+    build_offerings,
     find_matches,
 )
 
@@ -77,89 +76,30 @@ def _address_response(address: AddressContext) -> MatchAddressContext:
     )
 
 
-_RECEPTION_KIND_ORDER: dict[Kind, int] = {
-    "nursery": 0,
-    "kindergarten": 1,
-    "preschool": 2,
-}
-
-
-def _structured_standard_row(row: MatchedInstitution) -> MatchResult:
-    return MatchResult(
-        id=row.id,
-        external_id=row.external_id,
-        name=row.name,
-        institution_kind=row.institution_kind,
-        reception_kind=row.institution_kind,
-        offering="standard",
-        source_url=row.source_url,
-        match_basis=row.match_basis,
-        has_infant_group=row.has_infant_group,
-    )
-
-
-def _structured_infant_group_row(row: MatchedInstitution) -> MatchResult:
-    return MatchResult(
-        id=row.id,
-        external_id=row.external_id,
-        name=row.name,
-        institution_kind=row.institution_kind,
-        reception_kind="nursery",
-        offering="infant_group",
-        source_url=row.source_url,
-        match_basis=row.match_basis,
-        has_infant_group=row.has_infant_group,
-    )
-
-
-def _structured_rows(row: MatchedInstitution) -> list[MatchResult]:
-    results = [_structured_standard_row(row)]
-    if (
-        row.institution_kind == "kindergarten"
-        and row.has_infant_group
-        and row.match_basis == "address"
-    ):
-        results.append(_structured_infant_group_row(row))
-    return results
-
-
-def _structured_sort_key(row: MatchResult) -> tuple[int, str, Kind, str]:
-    return (
-        _RECEPTION_KIND_ORDER[row.reception_kind],
-        row.name,
-        row.institution_kind,
-        row.offering,
-    )
-
-
-def _structured_response(match_set: MatchSet) -> StructuredMatchResponse:
-    results = [
-        result
-        for row in match_set.results
-        for result in _structured_rows(row)
-    ]
-    results.sort(key=_structured_sort_key)
-    return StructuredMatchResponse(
-        address=_address_response(match_set.address),
-        results=results,
-    )
-
-
-def _match_response(
-    session: Session,
-    address_id: int,
-    kind: Kind | None,
-) -> StructuredMatchResponse | JSONResponse:
-    match_set = find_matches(session, address_id, kind)
-    if match_set is None:
-        return _not_found()
-    return _structured_response(match_set)
-
-
 @router.get("/match", response_model=StructuredMatchResponse)
 def match(
     address_id: int = Query(..., ge=1, description="addresses.id"),
     kind: Kind | None = Query(None, description="Filter by institution kind"),
     session: Session = Depends(get_db),
 ) -> StructuredMatchResponse | JSONResponse:
-    return _match_response(session, address_id, kind)
+    match_set = find_matches(session, address_id, kind)
+    if match_set is None:
+        return _not_found()
+    offerings = build_offerings(match_set)
+    return StructuredMatchResponse(
+        address=_address_response(match_set.address),
+        results=[
+            MatchResult(
+                id=o.id,
+                external_id=o.external_id,
+                name=o.name,
+                institution_kind=o.institution_kind,
+                reception_kind=o.reception_kind,
+                offering=o.offering,
+                source_url=o.source_url,
+                match_basis=o.match_basis,
+                has_infant_group=o.has_infant_group,
+            )
+            for o in offerings
+        ],
+    )

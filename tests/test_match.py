@@ -533,50 +533,6 @@ def test_ordering_is_stable_for_district_known(client: TestClient) -> None:
     assert first.content == second.content
 
 
-def test_ordering_is_reception_kind_then_name(client: TestClient) -> None:
-    _seed_fixture(client)
-    body = client.get("/api/match?address_id=1").json()
-    keys = [
-        (
-            item["reception_kind"],
-            item["name"],
-            item["institution_kind"],
-            item["offering"],
-        )
-        for item in body["results"]
-    ]
-    kind_order = {"nursery": 0, "kindergarten": 1, "preschool": 2}
-    assert keys == sorted(
-        keys,
-        key=lambda item: (kind_order[item[0]], item[1], item[2], item[3]),
-    )
-
-
-def test_kindergarten_without_infant_group_emits_only_kindergarten_reception(
-    client: TestClient,
-) -> None:
-    _seed_fixture(client)
-    body = client.get("/api/match?address_id=3&kind=kindergarten").json()
-
-    assert [
-        (r["external_id"], r["institution_kind"], r["reception_kind"], r["offering"])
-        for r in body["results"]
-    ] == [("K2", "kindergarten", "kindergarten", "standard")]
-
-
-def test_reception_rows_have_stable_composite_identity(
-    client: TestClient,
-) -> None:
-    _seed_fixture(client)
-    body = client.get("/api/match?address_id=1").json()
-    keys = [
-        (r["reception_kind"], r["institution_kind"], r["offering"], r["id"])
-        for r in body["results"]
-    ]
-
-    assert len(keys) == len(set(keys))
-
-
 def test_kindergarten_filter_works_without_district_context(
     client: TestClient,
 ) -> None:

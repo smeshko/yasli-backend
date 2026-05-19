@@ -14,6 +14,13 @@ from yasli.models.settlement import Settlement
 from yasli.models.types import DistrictCode, Kind, LocalityType
 
 MatchBasis = Literal["address", "district"]
+Offering = Literal["standard", "infant_group"]
+
+_RECEPTION_KIND_ORDER: dict[Kind, int] = {
+    "nursery": 0,
+    "kindergarten": 1,
+    "preschool": 2,
+}
 
 
 @dataclass(frozen=True)
@@ -49,6 +56,74 @@ class MatchSet:
     results: tuple[MatchedInstitution, ...]
 
 
+@dataclass(frozen=True)
+class MatchedOffering:
+    id: int
+    external_id: str
+    name: str
+    institution_kind: Kind
+    reception_kind: Kind
+    offering: Offering
+    source_url: str
+    match_basis: MatchBasis
+    has_infant_group: bool
+
+
+def _standard_offering(row: MatchedInstitution) -> MatchedOffering:
+    return MatchedOffering(
+        id=row.id,
+        external_id=row.external_id,
+        name=row.name,
+        institution_kind=row.institution_kind,
+        reception_kind=row.institution_kind,
+        offering="standard",
+        source_url=row.source_url,
+        match_basis=row.match_basis,
+        has_infant_group=row.has_infant_group,
+    )
+
+
+def _infant_group_offering(row: MatchedInstitution) -> MatchedOffering:
+    return MatchedOffering(
+        id=row.id,
+        external_id=row.external_id,
+        name=row.name,
+        institution_kind=row.institution_kind,
+        reception_kind="nursery",
+        offering="infant_group",
+        source_url=row.source_url,
+        match_basis=row.match_basis,
+        has_infant_group=row.has_infant_group,
+    )
+
+
+def _expand(row: MatchedInstitution) -> list[MatchedOffering]:
+    offerings = [_standard_offering(row)]
+    if (
+        row.institution_kind == "kindergarten"
+        and row.has_infant_group
+        and row.match_basis == "address"
+    ):
+        offerings.append(_infant_group_offering(row))
+    return offerings
+
+
+def _offering_sort_key(o: MatchedOffering) -> tuple[int, str, Kind, str]:
+    return (
+        _RECEPTION_KIND_ORDER[o.reception_kind],
+        o.name,
+        o.institution_kind,
+        o.offering,
+    )
+
+
+def build_offerings(match_set: MatchSet) -> tuple[MatchedOffering, ...]:
+    """Expand kindergartens-with-infant-group + apply canonical sort."""
+    offerings = [o for row in match_set.results for o in _expand(row)]
+    offerings.sort(key=_offering_sort_key)
+    return tuple(offerings)
+
+
 def effective_kinds(kind: Kind | None) -> tuple[Kind, ...]:
     if kind is None:
         return ("nursery", "kindergarten", "preschool")
@@ -74,7 +149,6 @@ def find_matches(
     if "preschool" in requested:
         results.extend(_preschool_rows(session, address_id, address.district_code))
 
-    results.sort(key=lambda row: (row.institution_kind, row.name))
     return MatchSet(address=address, requested_kinds=requested, results=tuple(results))
 
 
