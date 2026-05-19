@@ -26,7 +26,7 @@ import json
 import logging
 import sys
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
@@ -160,6 +160,145 @@ def _chunked(rows: list[dict[str, Any]], size: int = _CHUNK_SIZE) -> Iterator[li
         yield rows[i : i + size]
 
 
+def _pg_upsert(
+    session: Session,
+    *,
+    table: Any,
+    rows: list[dict[str, Any]],
+    natural_key: tuple[str, ...],
+    on_conflict_set: Callable[[Any], dict[str, Any]],
+    value_columns_for_unchanged: tuple[str, ...],
+    returning_columns: tuple[str, ...],
+    preserve_old_on_null_columns: tuple[str, ...] = (),
+    null_distinct_keys: tuple[str, ...] = (),
+    chunk_size: int | None = None,
+) -> tuple[list[dict[str, Any]], TableCounts]:
+    """Generic ``INSERT … ON CONFLICT DO UPDATE`` with classify-and-count.
+
+    Pre-fetches existing rows by the first column of ``natural_key`` (then
+    filters in Python for exact natural-key matches), runs the upsert with
+    ``returning_columns``, and tags each result row as
+    inserted / updated / unchanged.
+
+    ``on_conflict_set`` is a callable rather than a static dict because
+    SET clauses typically reference ``stmt.excluded.col`` — that handle
+    only exists after the ``pg_insert(...)`` call.
+
+    ``preserve_old_on_null_columns`` covers the
+    ``COALESCE(excluded.col, table.col)`` quirk: the SET clause is the
+    caller's responsibility, but the unchanged-check needs to know that a
+    NULL in the new row means "keep the old value" so it doesn't count
+    as a real change.
+
+    ``null_distinct_keys`` triggers a Python pre-filter for rows whose
+    natural key already exists. Postgres' default "NULL ≠ NULL" rule on
+    UNIQUE constraints means ``ON CONFLICT`` won't catch duplicates that
+    differ only in a NULL column; the pre-filter prevents that.
+
+    Returns the row dicts (one per ``returning_columns`` projection) for
+    both newly upserted AND pre-existing unchanged rows, so callers can
+    build their id maps from a single list.
+    """
+    counts = TableCounts()
+    if not rows:
+        return [], counts
+
+    assert set(natural_key).issubset(returning_columns), (
+        f"natural_key {natural_key!r} must be a subset of "
+        f"returning_columns {returning_columns!r}"
+    )
+
+    first_col_name = natural_key[0]
+    first_col_attr = getattr(table, first_col_name)
+    first_col_values = {row[first_col_name] for row in rows}
+
+    fetch_col_names = tuple(
+        dict.fromkeys((*natural_key, *value_columns_for_unchanged, *returning_columns))
+    )
+    fetch_attrs = [getattr(table, name) for name in fetch_col_names]
+
+    requested_keys = {tuple(row[c] for c in natural_key) for row in rows}
+    existing_by_key: dict[tuple[Any, ...], dict[str, Any]] = {}
+    for r in session.execute(
+        select(*fetch_attrs).where(first_col_attr.in_(first_col_values))
+    ).all():
+        key = tuple(getattr(r, name) for name in natural_key)
+        if key not in requested_keys:
+            continue
+        existing_by_key[key] = {name: getattr(r, name) for name in fetch_col_names}
+
+    rows_by_key = {tuple(row[c] for c in natural_key): row for row in rows}
+
+    result_rows: list[dict[str, Any]] = []
+
+    if null_distinct_keys:
+        fresh_rows: list[dict[str, Any]] = []
+        for key, row in rows_by_key.items():
+            existing = existing_by_key.get(key)
+            if existing is None:
+                fresh_rows.append(row)
+            else:
+                counts.unchanged += 1
+                result_rows.append({name: existing[name] for name in returning_columns})
+        rows_to_upsert = fresh_rows
+    else:
+        rows_to_upsert = rows
+
+    if not rows_to_upsert:
+        return result_rows, counts
+
+    returning_attrs = [getattr(table, name) for name in returning_columns]
+    chunks: Iterator[list[dict[str, Any]]] | list[list[dict[str, Any]]] = (
+        _chunked(rows_to_upsert, chunk_size) if chunk_size else [rows_to_upsert]
+    )
+
+    for chunk in chunks:
+        stmt = pg_insert(table).values(chunk)
+        stmt = stmt.on_conflict_do_update(
+            index_elements=list(natural_key),
+            set_=on_conflict_set(stmt),
+        ).returning(*returning_attrs)
+
+        for r in session.execute(stmt):
+            row_dict = {name: getattr(r, name) for name in returning_columns}
+            result_rows.append(row_dict)
+
+            key = tuple(row_dict[c] for c in natural_key)
+            existing = existing_by_key.get(key)
+            if existing is None:
+                counts.inserted += 1
+                continue
+
+            new_row = rows_by_key[key]
+            if _row_is_unchanged(
+                existing,
+                new_row,
+                value_columns_for_unchanged,
+                preserve_old_on_null_columns,
+            ):
+                counts.unchanged += 1
+            else:
+                counts.updated += 1
+
+    return result_rows, counts
+
+
+def _row_is_unchanged(
+    existing: dict[str, Any],
+    new_row: dict[str, Any],
+    value_columns: tuple[str, ...],
+    preserve_on_null: tuple[str, ...],
+) -> bool:
+    for col in value_columns:
+        new_val = new_row[col]
+        if col in preserve_on_null and new_val is None:
+            # COALESCE(NULL, old) → old; effectively no change.
+            continue
+        if new_val != existing[col]:
+            return False
+    return True
+
+
 def _fetch_snapshot_bytes(client: Any | None) -> bytes:
     """Phase 1: fetch the snapshot bytes from R2."""
     return r2.get_object(LATEST_KEY, client=client)
@@ -278,87 +417,43 @@ def _build_plan(snapshot: Snapshot) -> _IngestPlan:
 def _upsert_institutions(
     session: Session, plan: _IngestPlan
 ) -> tuple[dict[InstitutionKey, int], TableCounts]:
-    """Upsert institutions; return ``{(external_id, kind): id}`` plus counts.
+    """Upsert institutions; return ``{(external_id, kind): id}`` plus counts."""
 
-    We can't use ``RETURNING`` to distinguish inserted vs updated cleanly in
-    one statement (PG returns rows for both), so we do a pre-existing-id
-    lookup before the upsert and compare row IDs after.
-    """
-    counts = TableCounts()
-    if not plan.institutions:
-        return {}, counts
-
-    keys = [(row["external_id"], row["kind"]) for row in plan.institutions]
-    existing: dict[InstitutionKey, Institution] = {}
-    if keys:
-        existing_rows = session.execute(
-            select(Institution).where(
-                Institution.external_id.in_({k[0] for k in keys})
-            )
-        ).scalars().all()
-        existing = {
-            (r.external_id, r.kind): r
-            for r in existing_rows
-            if (r.external_id, r.kind) in set(keys)
-        }
-
-    pre_existing_keys: set[InstitutionKey] = set()
-    for key in keys:
-        if key in existing:
-            pre_existing_keys.add(key)
-
-    stmt = pg_insert(Institution).values(plan.institutions)
-    stmt = stmt.on_conflict_do_update(
-        index_elements=["external_id", "kind"],
-        set_={
+    def on_conflict_set(stmt: Any) -> dict[str, Any]:
+        return {
             "name": stmt.excluded.name,
             "source_url": stmt.excluded.source_url,
             "address": stmt.excluded.address,
             # Snapshot NULL means "backend-derived" for KG/PG. Preserve an
-            # existing district stamp so weekly ingest stays idempotent; the
-            # quarterly restamp command is the path that intentionally
-            # changes derived values. Nursery snapshots carry non-NULL API
-            # district codes, so those still update normally.
+            # existing district stamp so weekly ingest stays idempotent;
+            # the quarterly restamp command intentionally changes derived
+            # values. Nursery snapshots carry non-NULL API district codes
+            # so those still update normally.
             "district_code": func.coalesce(
                 stmt.excluded.district_code, Institution.district_code
             ),
             "has_infant_group": stmt.excluded.has_infant_group,
             "last_seen_at": stmt.excluded.last_seen_at,
-        },
-    ).returning(Institution.id, Institution.external_id, Institution.kind)
+        }
 
-    id_map: dict[InstitutionKey, int] = {}
-    for row in session.execute(stmt):
-        key = (row.external_id, row.kind)
-        id_map[key] = row.id
-        if key in pre_existing_keys:
-            # Was already there; row was UPDATEd. Detect "unchanged" by
-            # comparing the source row to the existing one before upsert.
-            new_row = next(
-                r for r in plan.institutions
-                if r["external_id"] == key[0] and r["kind"] == key[1]
-            )
-            old = existing[key]
-            effective_district_code = (
-                new_row["district_code"]
-                if new_row["district_code"] is not None
-                else old.district_code
-            )
-            if (
-                old.name == new_row["name"]
-                and old.source_url == new_row["source_url"]
-                and old.address == new_row["address"]
-                and old.district_code == effective_district_code
-                and old.has_infant_group == new_row["has_infant_group"]
-            ):
-                # Only `last_seen_at` was bumped — counts as unchanged for
-                # operator-readable summary purposes.
-                counts.unchanged += 1
-            else:
-                counts.updated += 1
-        else:
-            counts.inserted += 1
+    result_rows, counts = _pg_upsert(
+        session,
+        table=Institution,
+        rows=plan.institutions,
+        natural_key=("external_id", "kind"),
+        on_conflict_set=on_conflict_set,
+        # `last_seen_at` is intentionally excluded — a snapshot-time bump
+        # alone counts as unchanged for the operator-readable summary.
+        value_columns_for_unchanged=(
+            "name", "source_url", "address", "district_code", "has_infant_group",
+        ),
+        preserve_old_on_null_columns=("district_code",),
+        returning_columns=("id", "external_id", "kind"),
+    )
 
+    id_map: dict[InstitutionKey, int] = {
+        (r["external_id"], r["kind"]): r["id"] for r in result_rows
+    }
     return id_map, counts
 
 
@@ -366,37 +461,21 @@ def _upsert_streets(
     session: Session, plan: _IngestPlan
 ) -> tuple[dict[str, int], TableCounts]:
     """Upsert streets; return ``{raw_name: id}`` plus counts."""
-    counts = TableCounts()
-    if not plan.streets:
-        return {}, counts
 
-    raw_names = [s["raw_name"] for s in plan.streets]
-    existing_rows = session.execute(
-        select(Street).where(Street.raw_name.in_(raw_names))
-    ).scalars().all()
-    existing: dict[str, Street] = {r.raw_name: r for r in existing_rows}
+    def on_conflict_set(stmt: Any) -> dict[str, Any]:
+        return {"search_norm": stmt.excluded.search_norm}
 
-    stmt = pg_insert(Street).values(plan.streets)
-    stmt = stmt.on_conflict_do_update(
-        index_elements=["raw_name"],
-        set_={"search_norm": stmt.excluded.search_norm},
-    ).returning(Street.id, Street.raw_name)
+    result_rows, counts = _pg_upsert(
+        session,
+        table=Street,
+        rows=plan.streets,
+        natural_key=("raw_name",),
+        on_conflict_set=on_conflict_set,
+        value_columns_for_unchanged=("search_norm",),
+        returning_columns=("id", "raw_name"),
+    )
 
-    id_map: dict[str, int] = {}
-    for row in session.execute(stmt):
-        id_map[row.raw_name] = row.id
-        if row.raw_name in existing:
-            old = existing[row.raw_name]
-            new_row = next(
-                s for s in plan.streets if s["raw_name"] == row.raw_name
-            )
-            if old.search_norm == new_row["search_norm"]:
-                counts.unchanged += 1
-            else:
-                counts.updated += 1
-        else:
-            counts.inserted += 1
-
+    id_map: dict[str, int] = {r["raw_name"]: r["id"] for r in result_rows}
     return id_map, counts
 
 
@@ -407,19 +486,16 @@ def _upsert_addresses(
 ) -> tuple[dict[AddressKey, int], TableCounts]:
     """Upsert addresses; return ``{address_key: id}`` plus counts.
 
-    Idempotent upsert via ``INSERT … ON CONFLICT (street_id, number_int,
-    number_suffix, entrance) DO UPDATE SET street_id = EXCLUDED.street_id``
-    (no-op) so ``RETURNING`` emits the row id on conflict too. Pre-loads
-    existing rows via the same composite identity to count
-    inserted/unchanged accurately under the NULL-as-distinct semantics
-    that ``ON CONFLICT`` would otherwise let through.
+    The natural-key UNIQUE does NOT use ``NULLS NOT DISTINCT``, so
+    Postgres' default "NULL ≠ NULL" would let ``(street_id, 85, NULL,
+    NULL)`` duplicate on every re-ingest. ``_pg_upsert`` handles that
+    via the ``null_distinct_keys`` pre-filter; ``ON CONFLICT`` then
+    covers the all-non-NULL case for free.
     """
-    counts = TableCounts()
     if not plan.addresses:
-        return {}, counts
+        return {}, TableCounts()
 
     rows: list[dict[str, Any]] = []
-    address_keys: list[AddressKey] = []
     for addr in plan.addresses:
         street_id = street_ids.get(addr["street_raw_name"])
         if street_id is None:
@@ -433,89 +509,36 @@ def _upsert_addresses(
                 "entrance": addr["entrance"],
             }
         )
-        address_keys.append(
-            (
-                addr["street_raw_name"],
-                addr["number_int"],
-                addr["number_suffix"],
-                addr["entrance"],
-            )
-        )
 
     if not rows:
-        return {}, counts
+        return {}, TableCounts()
 
-    # Pre-fetch existing rows by composite identity. The natural-key
-    # UNIQUE does NOT use NULLS NOT DISTINCT, so Postgres' default
-    # "NULL ≠ NULL" rule would otherwise let
-    # `(street_id, 85, NULL, NULL)` duplicate on every re-ingest. We
-    # filter matches out of the insert batch in Python; ON CONFLICT
-    # handles the all-non-NULL case for free.
-    street_id_set = {r["street_id"] for r in rows}
-    existing_rows = session.execute(
-        select(
-            Address.id,
-            Address.street_id,
-            Address.number_int,
-            Address.number_suffix,
-            Address.entrance,
-        ).where(Address.street_id.in_(street_id_set))
-    ).all()
+    def on_conflict_set(stmt: Any) -> dict[str, Any]:
+        # No-op SET so RETURNING fires on conflict too. The natural key
+        # is the only identity; there are no value columns to merge.
+        return {"street_id": stmt.excluded.street_id}
+
+    result_rows, counts = _pg_upsert(
+        session,
+        table=Address,
+        rows=rows,
+        natural_key=("street_id", "number_int", "number_suffix", "entrance"),
+        on_conflict_set=on_conflict_set,
+        value_columns_for_unchanged=(),
+        returning_columns=("id", "street_id", "number_int", "number_suffix", "entrance"),
+        null_distinct_keys=("number_suffix", "entrance"),
+        chunk_size=_CHUNK_SIZE,
+    )
+
     street_id_to_raw = {v: k for k, v in street_ids.items()}
-    existing_by_key: dict[AddressKey, int] = {}
-    for r in existing_rows:
-        raw_name = street_id_to_raw.get(r.street_id)
+    address_id_map: dict[AddressKey, int] = {}
+    for r in result_rows:
+        raw_name = street_id_to_raw.get(r["street_id"])
         if raw_name is None:
             continue
-        existing_by_key[(raw_name, r.number_int, r.number_suffix, r.entrance)] = r.id
-
-    fresh_rows: list[dict[str, Any]] = []
-    fresh_keys: list[AddressKey] = []
-    address_id_map: dict[AddressKey, int] = {}
-    for row, key in zip(rows, address_keys, strict=True):
-        if key in existing_by_key:
-            address_id_map[key] = existing_by_key[key]
-            counts.unchanged += 1
-        else:
-            fresh_rows.append(row)
-            fresh_keys.append(key)
-
-    if not fresh_rows:
-        return address_id_map, counts
-
-    fresh_index = 0
-    for chunk in _chunked(fresh_rows):
-        chunk_size = len(chunk)
-        chunk_keys = fresh_keys[fresh_index : fresh_index + chunk_size]
-        fresh_index += chunk_size
-
-        stmt = pg_insert(Address).values(chunk)
-        stmt = stmt.on_conflict_do_update(
-            index_elements=["street_id", "number_int", "number_suffix", "entrance"],
-            set_={"street_id": stmt.excluded.street_id},
-        ).returning(
-            Address.id,
-            Address.street_id,
-            Address.number_int,
-            Address.number_suffix,
-            Address.entrance,
-        )
-
-        returned_by_key: dict[AddressKey, int] = {}
-        for r in session.execute(stmt):
-            raw_name = street_id_to_raw.get(r.street_id)
-            if raw_name is None:
-                continue
-            returned_by_key[
-                (raw_name, r.number_int, r.number_suffix, r.entrance)
-            ] = r.id
-
-        for key in chunk_keys:
-            address_id = returned_by_key.get(key)
-            if address_id is None:
-                continue
-            address_id_map[key] = address_id
-            counts.inserted += 1
+        address_id_map[
+            (raw_name, r["number_int"], r["number_suffix"], r["entrance"])
+        ] = r["id"]
 
     return address_id_map, counts
 
@@ -591,8 +614,6 @@ def _insert_address_institutions(
 
 def _count_disappeared(session: Session, scraped_at: datetime) -> int:
     """Phase 5: count institutions whose last_seen_at predates this snapshot."""
-    from sqlalchemy import func
-
     result = session.execute(
         select(func.count())
         .select_from(Institution)
