@@ -118,7 +118,7 @@ def test_round_trip_upgrade_downgrade_upgrade(fresh_db: str) -> None:
     up1 = _alembic(["upgrade", "head"], url)
     assert up1.returncode == 0, up1.stderr
     eng = _engine(url)
-    assert _current_revision(eng) == "0007"
+    assert _current_revision(eng) == "0008"
     tables = _table_names(eng)
     assert {
         "institutions",
@@ -143,7 +143,7 @@ def test_round_trip_upgrade_downgrade_upgrade(fresh_db: str) -> None:
     assert settlement_count == 6
     eng.dispose()
 
-    down = _alembic(["downgrade", "-1"], url)
+    down = _alembic(["downgrade", "-2"], url)
     assert down.returncode == 0, down.stderr
     eng = _engine(url)
     assert _current_revision(eng) == "0006"
@@ -168,7 +168,7 @@ def test_round_trip_upgrade_downgrade_upgrade(fresh_db: str) -> None:
     up2 = _alembic(["upgrade", "head"], url)
     assert up2.returncode == 0, up2.stderr
     eng = _engine(url)
-    assert _current_revision(eng) == "0007"
+    assert _current_revision(eng) == "0008"
     tables = _table_names(eng)
     assert {
         "institutions",
@@ -600,3 +600,24 @@ def test_address_institutions_lookup_index_present(fresh_db: str) -> None:
     assert len(rows) == 1
     indexdef = rows[0][0].lower()
     assert "address_id" in indexdef
+
+
+def test_address_institutions_institution_id_index_present(fresh_db: str) -> None:
+    """Index on `(institution_id)` for institution-keyed coverage lookups."""
+    url = fresh_db
+    up = _alembic(["upgrade", "head"], url)
+    assert up.returncode == 0, up.stderr
+
+    eng = _engine(url)
+    with eng.connect() as conn:
+        rows = conn.execute(
+            text(
+                "SELECT indexdef FROM pg_indexes "
+                "WHERE tablename = 'address_institutions' "
+                "  AND indexname = 'ix_address_institutions_institution_id'"
+            )
+        ).all()
+    eng.dispose()
+    assert len(rows) == 1
+    indexdef = rows[0][0].lower()
+    assert "institution_id" in indexdef
