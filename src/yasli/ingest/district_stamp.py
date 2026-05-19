@@ -26,9 +26,9 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 
-from sqlalchemy import text
+from sqlalchemy import select, text, update
 from sqlalchemy.orm import Session
 
 from yasli.ingest.normalise import UnknownLocality, parse_street
@@ -38,6 +38,7 @@ from yasli.ingest.parser import (
     parse_number,
 )
 from yasli.geo.settlements import VARNA_SETTLEMENTS
+from yasli.models import Address, Street
 
 log = logging.getLogger("yasli.ingest.district_stamp")
 
@@ -161,24 +162,46 @@ def _single_district(rows: list[Any]) -> str | None:
     return str(rows[0][0]) if len(rows) == 1 else None
 
 
-def _settlement_case_sql() -> str:
-    """Build the ``CASE WHEN`` body used by the settlement stamping pass.
+def _classify_street(raw_name: str) -> str | None:
+    """Return the settlement code for ``raw_name``, or ``None``.
 
-    Returns SQL fragments wired into a correlated subquery, so the same
-    text works on Postgres and SQLite (no UPDATE … FROM portability
-    issues). Patterns cover the two punctuation styles ГРАО / the
-    scraper emit (``С.КАМЕНАР`` and ``С. КАМЕНАР``).
+    ``VARNA_SETTLEMENTS`` is a small closed set; doing the LIKE match in
+    Python avoids interpolating its values into raw SQL and is faithful
+    to the prior CASE/LIKE semantics (every pattern ends with ``%`` and
+    is anchored at the start).
     """
-    branches = []
     for settlement in VARNA_SETTLEMENTS:
-        conditions = " OR ".join(
-            f"s.raw_name LIKE '{pattern}'"
-            for pattern in settlement.raw_name_patterns
-        )
-        branches.append(
-            f"WHEN {conditions} THEN '{settlement.code}'"
-        )
-    return "CASE " + " ".join(branches) + " ELSE NULL END"
+        for pattern in settlement.raw_name_patterns:
+            if pattern.endswith("%"):
+                if raw_name.startswith(pattern[:-1]):
+                    return settlement.code
+            elif raw_name == pattern:
+                return settlement.code
+    return None
+
+
+def _stamp_settlements(session: Session, *, gated: bool) -> int:
+    """Stamp ``addresses.settlement_code`` from per-street classification.
+
+    Loads all streets, classifies them in Python, then issues one
+    parametrised UPDATE per matching settlement. Returns the total
+    rows updated across those statements.
+    """
+    streets = session.execute(select(Street.id, Street.raw_name)).all()
+    by_code: dict[str, list[int]] = {}
+    for street_id, raw_name in streets:
+        code = _classify_street(raw_name)
+        if code is not None:
+            by_code.setdefault(code, []).append(street_id)
+
+    total = 0
+    for code, street_ids in by_code.items():
+        stmt = update(Address).where(Address.street_id.in_(street_ids))
+        if gated:
+            stmt = stmt.where(Address.settlement_code.is_(None))
+        result = session.execute(stmt.values(settlement_code=code))
+        total += _row_count(result)
+    return total
 
 
 def _stamp_addresses(
@@ -210,15 +233,7 @@ def _stamp_addresses(
     # Settlement pass: covers ГР.ВАРНА (also stamps the district-stamped
     # city addresses for completeness) and the five villages, which
     # never get a district stamp because villages have no район.
-    settlement_gate = "settlement_code IS NULL" if gated else "1=1"
-    settlement_sql = (
-        f"UPDATE addresses SET settlement_code = ("
-        f"  SELECT {_settlement_case_sql()} FROM streets s "
-        f"  WHERE s.id = addresses.street_id"
-        f") WHERE {settlement_gate}"
-    )
-    result = session.execute(text(settlement_sql))
-    summary.settlement_stamped = _row_count(result)
+    summary.settlement_stamped = _stamp_settlements(session, gated=gated)
 
     summary.remaining_null = int(
         session.execute(text(_COUNT_NULL_SQL)).scalar_one()
@@ -335,31 +350,51 @@ def _lookup_grao_district(
     return None
 
 
-def _parse_and_lookup_address(session: Session, address: str | None) -> str | None:
+_AddressLookupReason = Literal[
+    "ok", "no_address", "parse_failed", "no_grao_match"
+]
+
+
+@dataclass(frozen=True)
+class _AddressLookup:
+    district_code: str | None
+    reason: _AddressLookupReason
+
+
+def _parse_and_lookup_address(
+    session: Session, address: str | None
+) -> _AddressLookup:
     """Run ``parse_street`` + ``parse_number`` over an institution's
     ``address`` and look the resulting tuple up in ``grao_addresses``.
+
+    Returns the district_code (or ``None``) alongside the reason the
+    lookup ended where it did, so the caller can label the failure
+    without re-running the parser.
     """
     if not address:
-        return None
+        return _AddressLookup(district_code=None, reason="no_address")
     # Address strings can be "ГР.ВАРНА УЛ.X 5" — the existing parser knows
     # the format and yields a ParsedStreet plus a number string. The DG
     # address strings in the institution row aren't separated like the
     # snapshot's `address_entries` (which has discrete street + number
     # fields); we rsplit on the last whitespace to peel off the number.
     if " " not in address:
-        return None
+        return _AddressLookup(district_code=None, reason="parse_failed")
     head, _, tail = address.rpartition(" ")
     try:
         parsed = parse_street(head)
     except UnknownLocality:
-        return None
+        return _AddressLookup(district_code=None, reason="parse_failed")
     try:
         number_int, suffix, entrance = parse_number(tail)
     except (UnparseableNumber, NumberOutOfRange):
-        return None
-    return _lookup_grao_district(
+        return _AddressLookup(district_code=None, reason="parse_failed")
+    district = _lookup_grao_district(
         session, parsed.search_norm, number_int, suffix, entrance
     )
+    if district is None:
+        return _AddressLookup(district_code=None, reason="no_grao_match")
+    return _AddressLookup(district_code=district, reason="ok")
 
 
 def _stamp_institutions(
@@ -397,48 +432,27 @@ def _stamp_institutions(
             continue
 
         # Fallback: address-parse + grao_addresses lookup.
-        parsed_dc = _parse_and_lookup_address(session, address)
-        if parsed_dc is not None:
+        lookup = _parse_and_lookup_address(session, address)
+        if lookup.district_code is not None:
             session.execute(
                 text(_SET_INST_DISTRICT_SQL),
-                {"district_code": parsed_dc, "inst_id": inst_id},
+                {"district_code": lookup.district_code, "inst_id": inst_id},
             )
             summary.fallback_stamped += 1
             continue
 
-        # Still NULL — figure out *why* for the log line.
-        if catchment_count == 0:
-            reason = "no_catchment" if not address else "no_catchment"
+        # Still NULL — derive a reason from the lookup outcome and whether
+        # the catchment was empty.
+        if lookup.reason == "parse_failed":
+            reason = "address_parse_failed"
+        elif catchment_count == 0:
+            reason = (
+                "grao_lookup_failed"
+                if lookup.reason == "no_grao_match"
+                else "no_catchment"
+            )
         else:
-            # We had catchment rows but they all had district_code IS NULL,
-            # AND the address-parse fallback didn't find anything either.
-            if not address:
-                reason = "all_catchment_null"
-            else:
-                reason = "all_catchment_null"
-        if not address:
-            address_for_log = None
-        else:
-            address_for_log = address
-
-        # Pin a more specific reason when the address path itself failed.
-        if address:
-            # Re-evaluate address parsing to label the specific failure.
-            try:
-                if " " in address:
-                    head, _, tail = address.rpartition(" ")
-                    parse_street(head)
-                    try:
-                        parse_number(tail)
-                    except (UnparseableNumber, NumberOutOfRange):
-                        reason = "address_parse_failed"
-                else:
-                    reason = "address_parse_failed"
-            except UnknownLocality:
-                reason = "address_parse_failed"
-            # If parsing succeeded but no grao row matched:
-            if reason not in ("address_parse_failed",) and catchment_count == 0:
-                reason = "grao_lookup_failed"
+            reason = "all_catchment_null"
 
         summary.remaining_null += 1
         if len(summary.null_sample) < _SAMPLE_CAP:
@@ -447,7 +461,7 @@ def _stamp_institutions(
                     reason=reason,
                     external_id=external_id,
                     name=name,
-                    address=address_for_log,
+                    address=address,
                     catchment_rows=catchment_count,
                 )
             )

@@ -366,16 +366,18 @@ def test_non_gated_restamp_overwrites_existing_stamp(session: Session) -> None:
     assert a.district_code == "03"
 
 
-def test_settlement_case_sql_covers_configured_reference_data() -> None:
-    sql = district_stamp._settlement_case_sql()
-
-    assert sql.startswith("CASE ")
-    assert sql.endswith(" ELSE NULL END")
-    assert sql.count("WHEN ") == len(VARNA_SETTLEMENTS)
+def test_classify_street_covers_configured_reference_data() -> None:
     for settlement in VARNA_SETTLEMENTS:
         for pattern in settlement.raw_name_patterns:
-            assert f"s.raw_name LIKE '{pattern}'" in sql
-        assert f"THEN '{settlement.code}'" in sql
+            assert pattern.endswith("%"), (
+                "classifier assumes LIKE-prefix patterns"
+            )
+            prefix = pattern[:-1]
+            assert (
+                district_stamp._classify_street(prefix + " УЛ. Х")
+                == settlement.code
+            )
+    assert district_stamp._classify_street("UNKNOWN PLACE") is None
 
 
 def test_gated_settlement_pass_only_fills_null_settlement_code(
@@ -419,6 +421,59 @@ def test_non_gated_settlement_pass_recomputes_all_settlement_codes(
     assert summary.settlement_stamped == 1
     address = session.execute(select(Address).where(Address.id == 10)).scalar_one()
     assert address.settlement_code == "35701"
+
+
+# ---------------------------------------------------------------------------
+# _AddressLookup — reason-aware fallback lookup outcomes
+# ---------------------------------------------------------------------------
+
+
+def test_parse_and_lookup_address_no_address(session: Session) -> None:
+    result = district_stamp._parse_and_lookup_address(session, None)
+    assert result.district_code is None
+    assert result.reason == "no_address"
+
+
+def test_parse_and_lookup_address_parse_failure(session: Session) -> None:
+    # No whitespace at all → can't split off the trailing number.
+    result = district_stamp._parse_and_lookup_address(session, "GARBAGE")
+    assert result.district_code is None
+    assert result.reason == "parse_failed"
+
+
+def test_parse_and_lookup_address_unknown_locality(session: Session) -> None:
+    # Has a space, but the base locality isn't one of the six recognised.
+    result = district_stamp._parse_and_lookup_address(
+        session, "ГР.СОФИЯ УЛ.Х 5"
+    )
+    assert result.district_code is None
+    assert result.reason == "parse_failed"
+
+
+def test_parse_and_lookup_address_no_grao_match(session: Session) -> None:
+    result = district_stamp._parse_and_lookup_address(
+        session, "ГР.ВАРНА УЛ.Х 99"
+    )
+    assert result.district_code is None
+    assert result.reason == "no_grao_match"
+
+
+def test_parse_and_lookup_address_ok(session: Session) -> None:
+    composed = "gr.varna ul.h"
+    _add_grao(
+        session,
+        street_code="00001",
+        search_norm=composed,
+        raw="УЛ.Х",
+        number_int=5,
+        district_code="03",
+    )
+    session.commit()
+    result = district_stamp._parse_and_lookup_address(
+        session, "ГР.ВАРНА УЛ.Х 5"
+    )
+    assert result.district_code == "03"
+    assert result.reason == "ok"
 
 
 # ---------------------------------------------------------------------------
