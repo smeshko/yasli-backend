@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: yasli
+          POSTGRES_PASSWORD: yasli
+          POSTGRES_DB: yasli
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 15
+
+    env:
+      # tests/conftest.py monkeypatches DATABASE_URL per-test; the value
+      # here just keeps module imports happy. test_migrations.py reads
+      # YASLI_TEST_DATABASE_URL and skips when it isn't reachable, so we
+      # point it at the Postgres service above.
+      DATABASE_URL: postgresql+psycopg://yasli:yasli@localhost:5432/yasli
+      YASLI_TEST_DATABASE_URL: postgresql+psycopg://yasli:yasli@localhost:5432/yasli
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v3
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      - run: uv sync --extra dev
+
+      - run: uv run ruff check .
+
+      # tests/ingest/* spawns its own Postgres via testcontainers — the
+      # Docker daemon that ships with ubuntu-latest runners is enough.
+      - run: uv run pytest
