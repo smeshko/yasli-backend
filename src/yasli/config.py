@@ -8,6 +8,7 @@ any DB connection is attempted.
 
 from __future__ import annotations
 
+from typing import Literal
 from urllib.parse import urlsplit
 
 from pydantic import field_validator
@@ -86,6 +87,7 @@ class Settings(BaseSettings):
     # "Field required" error before our validator runs — we want a single,
     # consistent error message that names the env var.
     database_url: str = ""
+    environment: Literal["dev", "production"] = "dev"
 
     @field_validator("database_url", mode="before")
     @classmethod

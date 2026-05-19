@@ -15,7 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import SQLAlchemyError
 
-from yasli.config import CorsSettings
+from yasli.config import CorsSettings, Settings
 from yasli.routes.addresses import router as addresses_router
 from yasli.routes.health import router as health_router
 from yasli.routes.institutions import router as institutions_router
@@ -29,6 +29,11 @@ def create_app(cors_allowed_origins: Sequence[str] | None = None) -> FastAPI:
         if cors_allowed_origins is not None
         else CorsSettings().allowed_origins
     )
+    if Settings().environment == "production" and not allowed_origins:
+        raise RuntimeError(
+            "CORS_ALLOWED_ORIGINS must be set in production; "
+            "refusing to start with no allowed origins"
+        )
     app = FastAPI(title="yasli")
     app.add_middleware(
         CORSMiddleware,
