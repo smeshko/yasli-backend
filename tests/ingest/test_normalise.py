@@ -93,9 +93,14 @@ def test_every_cyrillic_letter_in_table_maps_to_latin() -> None:
         assert latin != ch, f"{ch!r} did not transliterate"
 
 
-def test_base_localities_constant_is_six_elements() -> None:
-    assert len(BASE_LOCALITIES) == 6
+def test_base_localities_cover_both_punctuation_forms() -> None:
+    # Two forms per settlement (with and without the internal space) ×
+    # 6 settlements = 12 accepted base-locality prefixes.
+    assert len(BASE_LOCALITIES) == 12
     assert "ГР.ВАРНА" in BASE_LOCALITIES
+    assert "ГР. ВАРНА" in BASE_LOCALITIES
+    assert "С.ТОПОЛИ" in BASE_LOCALITIES
+    assert "С. ТОПОЛИ" in BASE_LOCALITIES
 
 
 def test_bare_base_locality_is_compound() -> None:

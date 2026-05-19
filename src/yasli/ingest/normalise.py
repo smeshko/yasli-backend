@@ -20,15 +20,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from yasli.geo.settlements import parser_base_localities
 
-BASE_LOCALITIES: tuple[str, ...] = (
-    "ГР.ВАРНА",
-    "С. ТОПОЛИ",
-    "С. ЗВЕЗДИЦА",
-    "С. КАМЕНАР",
-    "С. КОНСТАНТИНОВО",
-    "С. КАЗАШКО",
-)
+BASE_LOCALITIES: tuple[str, ...] = parser_base_localities()
 
 TYPE_MARKERS: tuple[str, ...] = (
     "УЛ.",

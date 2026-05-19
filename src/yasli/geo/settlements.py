@@ -58,3 +58,18 @@ VARNA_SETTLEMENTS: tuple[Settlement, ...] = (
         raw_name_patterns=("С.КАЗАШКО%", "С. КАЗАШКО%"),
     ),
 )
+
+
+def parser_base_localities() -> tuple[str, ...]:
+    """Raw-name prefixes accepted by the street parser, derived from
+    ``VARNA_SETTLEMENTS``.
+
+    Each settlement contributes one entry per ``raw_name_patterns`` form
+    (with and without the punctuation-internal space), so the parser
+    accepts both ``ГР.ВАРНА`` and ``ГР. ВАРНА``.
+    """
+    return tuple(
+        pattern.rstrip("%")
+        for settlement in VARNA_SETTLEMENTS
+        for pattern in settlement.raw_name_patterns
+    )

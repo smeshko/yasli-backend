@@ -70,9 +70,11 @@ def _normalise_cors_origin(raw: str) -> str:
     return f"{parsed.scheme}://{parsed.netloc}"
 
 
-class CorsSettings(BaseSettings):
+class _EnvBase(BaseSettings):
     model_config = SettingsConfigDict(env_file="../.env", extra="ignore")
 
+
+class CorsSettings(_EnvBase):
     cors_allowed_origins: str = ""
 
     @property
@@ -80,9 +82,7 @@ class CorsSettings(BaseSettings):
         return parse_cors_allowed_origins(self.cors_allowed_origins)
 
 
-class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file="../.env", extra="ignore")
-
+class Settings(_EnvBase):
     # Default to empty string so pydantic-settings doesn't raise its own
     # "Field required" error before our validator runs — we want a single,
     # consistent error message that names the env var.
