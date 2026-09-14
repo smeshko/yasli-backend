@@ -70,6 +70,64 @@ def test_institution_metadata_columns_registered() -> None:
     assert columns.has_infant_group.nullable is False
 
 
+CONTACT_COLUMNS = {"phone": 128, "email": 256, "director": 256, "website": 256}
+
+
+def test_institution_contact_columns_registered() -> None:
+    columns = Institution.__table__.c
+    for name, length in CONTACT_COLUMNS.items():
+        assert columns[name].nullable is True, name
+        assert columns[name].type.length == length, name
+        assert columns[name].server_default is None, name
+
+
+def test_institution_contacts_default_to_none() -> None:
+    inst = Institution(external_id="1", name="ДГ 1", kind="kindergarten")
+    for name in CONTACT_COLUMNS:
+        assert getattr(inst, name) is None
+
+
+def test_institution_contacts_round_trip(session_factory) -> None:
+    from datetime import datetime, timezone
+
+    seen = datetime(2026, 9, 13, tzinfo=timezone.utc)
+    contacts = {
+        "phone": "052 123 456 / 0888 123 456",
+        "email": "dg1@varna.bg",
+        "director": "Мария Петрова",
+        "website": "https://dg1.example.bg",
+    }
+    with Session(session_factory) as s:
+        s.add(
+            Institution(
+                id=1,
+                external_id="1",
+                name="ДГ 1",
+                kind="kindergarten",
+                source_url="https://x",
+                last_seen_at=seen,
+                **contacts,
+            )
+        )
+        s.add(
+            Institution(
+                id=2,
+                external_id="2",
+                name="ДГ 2",
+                kind="kindergarten",
+                source_url="https://x",
+                last_seen_at=seen,
+            )
+        )
+        s.commit()
+    with Session(session_factory) as s:
+        with_contacts = s.get(Institution, 1)
+        without = s.get(Institution, 2)
+        for name, value in contacts.items():
+            assert getattr(with_contacts, name) == value
+            assert getattr(without, name) is None
+
+
 def test_institution_district_code_literal_matches_check_constraint() -> None:
     hints = typing.get_type_hints(
         Institution,
