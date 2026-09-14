@@ -53,10 +53,10 @@ project root, and this repo's plans live in `backend/` while the epics live in
 the `yasli/` parent. Edit both sides by hand.
 
 - [ ] Tick phase 1.1's `### Acceptance criteria` in
-      `../../../../../docs/artifacts/epics/01-institution-data-foundation.md`
+      `../../../../epics/01-institution-data-foundation.md`
 - [ ] Set that phase's `**Plan**:` line to
       `**Plan**: [institution-contact-fields-contract](../../../backend/docs/artifacts/plans/institution-contact-fields-contract/PLAN.md) · status: done`
-- [ ] Promote Epic 1's row in `../../../../../docs/artifacts/epics/EPICS.md` from
+- [ ] Promote Epic 1's row in `../../../../epics/EPICS.md` from
       `Ready for dev` to `In progress`
 - [ ] Confirm phase 1.2 is now unblocked — note in the PR description that the
       backend must be **deployed**, not merely merged, before the scraper phase

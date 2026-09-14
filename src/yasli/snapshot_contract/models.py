@@ -5,7 +5,7 @@ byte-for-byte equivalent in their generated JSON Schema; the drift test in
 
 The contact fields (`phone`, `email`, `director`, `website`) were added here
 first: this copy is intentionally one phase ahead of the scraper until it
-starts emitting them (epic 01, phase 1.2), because both sides validate with
+starts emitting them (scraper epic 01, phase 1.1), because both sides validate with
 `extra="forbid"` and the backend must accept the fields before they arrive.
 """
 

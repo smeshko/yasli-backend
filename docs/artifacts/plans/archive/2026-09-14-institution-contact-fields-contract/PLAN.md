@@ -3,8 +3,8 @@
 Status: done
 Branch: feature/institution-contact-fields-contract
 Risk: medium
-Epic: 01 — Institution data foundation ([epic](../../../../../docs/artifacts/epics/01-institution-data-foundation.md))
-Phase: 1.1 — Persist source contact metadata (backend)
+Epic: 01 — Institution data foundation ([epic](../../../epics/01-institution-data-foundation.md))
+Phase: 1.1 — Persist source contact metadata
 Linear: none
 Created: 2026-08-17
 
