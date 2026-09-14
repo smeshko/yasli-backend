@@ -1,6 +1,6 @@
 # Plan: Persist source contact metadata
 
-Status: in-progress
+Status: done
 Branch: feature/institution-contact-fields-contract
 Risk: medium
 Epic: 01 — Institution data foundation ([epic](../../../../../docs/artifacts/epics/01-institution-data-foundation.md))
@@ -93,15 +93,15 @@ See [RESEARCH.md](./RESEARCH.md). The short version:
 
 ## Acceptance Criteria
 
-- [ ] Ingesting the **current** production snapshot (no new fields) succeeds
+- [x] Ingesting the **current** production snapshot (no new fields) succeeds
       unchanged and leaves all four new columns NULL
-- [ ] Ingesting a snapshot that carries all four fields stores them verbatim
-- [ ] An empty-string value is rejected by the contract, never stored as `""`
-- [ ] Re-ingesting the same snapshot twice reports the institution rows as
+- [x] Ingesting a snapshot that carries all four fields stores them verbatim
+- [x] An empty-string value is rejected by the contract, never stored as `""`
+- [x] Re-ingesting the same snapshot twice reports the institution rows as
       `unchanged` — the new fields participate in the change comparison
-- [ ] `GET /api/institutions` and `GET /api/institutions/:id` response bodies are
+- [x] `GET /api/institutions` and `GET /api/institutions/:id` response bodies are
       byte-identical to before the change
-- [ ] `just be-test` and `just be-lint` pass
+- [x] `just be-test` and `just be-lint` pass
 
 ## Tasks
 
@@ -111,4 +111,4 @@ Task state lives here. Tasks are appended by `scripts/add_task.py` and
 - [x] TASK-001: Accept contact fields in the vendored snapshot contract
 - [x] TASK-002: Add nullable contact columns to institutions (depends on TASK-001)
 - [x] TASK-003: Map contact fields through ingest (depends on TASK-002)
-- [ ] TASK-004: Final Validation
+- [x] TASK-004: Final Validation
