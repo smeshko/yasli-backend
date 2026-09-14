@@ -44,6 +44,10 @@ class Institution(Base):
     kind: Mapped[Kind] = mapped_column(String(16), nullable=False)
     source_url: Mapped[str] = mapped_column(String(512), nullable=False)
     address: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    phone: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    email: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    director: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    website: Mapped[str | None] = mapped_column(String(256), nullable=True)
     district_code: Mapped[DistrictCode | None] = mapped_column(
         String(2), nullable=True
     )

@@ -22,6 +22,8 @@ from yasli.geo.settlements import VARNA_SETTLEMENTS
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
+CONTACT_COLUMNS = {"phone", "email", "director", "website"}
+
 EXPECTED_SETTLEMENT_ROWS = {
     settlement.code: (settlement.name, settlement.locality_type)
     for settlement in VARNA_SETTLEMENTS
@@ -118,7 +120,7 @@ def test_round_trip_upgrade_downgrade_upgrade(fresh_db: str) -> None:
     up1 = _alembic(["upgrade", "head"], url)
     assert up1.returncode == 0, up1.stderr
     eng = _engine(url)
-    assert _current_revision(eng) == "0008"
+    assert _current_revision(eng) == "0009"
     tables = _table_names(eng)
     assert {
         "institutions",
@@ -136,11 +138,22 @@ def test_round_trip_upgrade_downgrade_upgrade(fresh_db: str) -> None:
     # The institutions.district_code column (from 0004) is also present.
     inst_columns = {c["name"] for c in inspect(eng).get_columns("institutions")}
     assert "district_code" in inst_columns
+    assert CONTACT_COLUMNS.issubset(inst_columns)
     with eng.connect() as conn:
         settlement_count = conn.execute(
             text("SELECT count(*) FROM settlements")
         ).scalar_one()
     assert settlement_count == 6
+    eng.dispose()
+
+    # 0009 → 0008 drops exactly the contact columns.
+    down_one = _alembic(["downgrade", "-1"], url)
+    assert down_one.returncode == 0, down_one.stderr
+    eng = _engine(url)
+    assert _current_revision(eng) == "0008"
+    inst_columns = {c["name"] for c in inspect(eng).get_columns("institutions")}
+    assert not CONTACT_COLUMNS & inst_columns
+    assert {"address", "district_code", "has_infant_group"}.issubset(inst_columns)
     eng.dispose()
 
     down = _alembic(["downgrade", "-2"], url)
@@ -168,7 +181,7 @@ def test_round_trip_upgrade_downgrade_upgrade(fresh_db: str) -> None:
     up2 = _alembic(["upgrade", "head"], url)
     assert up2.returncode == 0, up2.stderr
     eng = _engine(url)
-    assert _current_revision(eng) == "0008"
+    assert _current_revision(eng) == "0009"
     tables = _table_names(eng)
     assert {
         "institutions",
@@ -355,6 +368,9 @@ def test_institutions_metadata_columns_and_constraint(fresh_db: str) -> None:
     assert by_name["has_infant_group"][2] == "false"
     constraint_names = {c[0] for c in constraints}
     assert "ck_institutions_district_code" in constraint_names
+    for name in CONTACT_COLUMNS:
+        assert by_name[name][1] == "YES", f"{name} should be nullable"
+        assert by_name[name][2] is None, f"{name} should have no default"
 
 
 def test_trigram_index_on_streets_search_norm(fresh_db: str) -> None:
