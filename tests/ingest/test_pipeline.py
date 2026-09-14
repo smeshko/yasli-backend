@@ -255,6 +255,148 @@ def test_updated_institution_metadata_counts_updated(
     assert summary.institutions.updated >= 1
 
 
+CONTACT_FIELDS = ("phone", "email", "director", "website")
+
+
+def _contacts_for(external_id: str) -> dict[str, str]:
+    return {
+        "phone": f"052 {external_id} / 0888 {external_id}",
+        "email": f"inst{external_id}@varna.bg",
+        "director": f"Директор {external_id}",
+        "website": f"https://inst{external_id}.example.bg",
+    }
+
+
+def _with_contacts(
+    snapshot: dict[str, Any], external_ids: set[str] | None = None
+) -> dict[str, Any]:
+    """Copy of `snapshot` with contacts on the given institutions (all if None)."""
+    payload = deepcopy(snapshot)
+    for inst in payload["institutions"]:
+        if external_ids is None or inst["external_id"] in external_ids:
+            inst.update(_contacts_for(inst["external_id"]))
+    return payload
+
+
+def _contacts_by_external_id(session: Session) -> dict[str, dict[str, str | None]]:
+    return {
+        inst.external_id: {f: getattr(inst, f) for f in CONTACT_FIELDS}
+        for inst in session.execute(select(Institution)).scalars()
+    }
+
+
+@mock_aws
+def test_contacts_are_persisted_verbatim(
+    engine: Engine, r2_env: dict[str, str], snapshot_dict: dict[str, Any]
+) -> None:
+    s3 = boto3.client("s3", region_name="us-east-1")
+    _put_snapshot(s3, _with_contacts(snapshot_dict))
+
+    pipeline.run(r2_client=s3)
+
+    with Session(engine) as s:
+        stored = _contacts_by_external_id(s)
+    for inst in snapshot_dict["institutions"]:
+        ext = inst["external_id"]
+        assert stored[ext] == _contacts_for(ext)
+
+
+@mock_aws
+def test_snapshot_without_contacts_leaves_columns_null(
+    engine: Engine, r2_env: dict[str, str], snapshot_dict: dict[str, Any]
+) -> None:
+    s3 = boto3.client("s3", region_name="us-east-1")
+    for inst in snapshot_dict["institutions"]:
+        assert not set(CONTACT_FIELDS) & inst.keys()
+    _put_snapshot(s3, snapshot_dict)
+
+    summary = pipeline.run(r2_client=s3)
+
+    assert summary.institutions.inserted == EXPECTED_INSTITUTIONS
+    with Session(engine) as s:
+        stored = _contacts_by_external_id(s)
+    assert len(stored) == EXPECTED_INSTITUTIONS
+    for contacts in stored.values():
+        assert contacts == {f: None for f in CONTACT_FIELDS}
+
+
+@mock_aws
+def test_dropped_contacts_are_cleared_and_count_updated(
+    engine: Engine, r2_env: dict[str, str], snapshot_dict: dict[str, Any]
+) -> None:
+    s3 = boto3.client("s3", region_name="us-east-1")
+    _put_snapshot(s3, _with_contacts(snapshot_dict))
+    pipeline.run(r2_client=s3)
+
+    bumped = deepcopy(snapshot_dict)
+    bumped["scraped_at"] = "2026-05-11T01:00:00Z"
+    s3.put_object(Bucket=BUCKET, Key=KEY, Body=json.dumps(bumped).encode("utf-8"))
+
+    summary = pipeline.run(r2_client=s3)
+
+    with Session(engine) as s:
+        stored = _contacts_by_external_id(s)
+    for contacts in stored.values():
+        assert contacts == {f: None for f in CONTACT_FIELDS}
+    assert summary.institutions.updated == EXPECTED_INSTITUTIONS
+    assert summary.institutions.unchanged == 0
+
+
+@mock_aws
+def test_same_contacts_twice_counts_unchanged(
+    engine: Engine, r2_env: dict[str, str], snapshot_dict: dict[str, Any]
+) -> None:
+    s3 = boto3.client("s3", region_name="us-east-1")
+    _put_snapshot(s3, _with_contacts(snapshot_dict))
+    pipeline.run(r2_client=s3)
+
+    summary2 = pipeline.run(r2_client=s3)
+
+    assert summary2.institutions.inserted == 0
+    assert summary2.institutions.updated == 0
+    assert summary2.institutions.unchanged == EXPECTED_INSTITUTIONS
+
+
+@mock_aws
+def test_changed_phone_counts_updated(
+    engine: Engine, r2_env: dict[str, str], snapshot_dict: dict[str, Any]
+) -> None:
+    s3 = boto3.client("s3", region_name="us-east-1")
+    with_contacts = _with_contacts(snapshot_dict)
+    _put_snapshot(s3, with_contacts)
+    pipeline.run(r2_client=s3)
+
+    corrected = deepcopy(with_contacts)
+    corrected["institutions"][1]["phone"] = "052 999 999"
+    s3.put_object(
+        Bucket=BUCKET, Key=KEY, Body=json.dumps(corrected).encode("utf-8")
+    )
+
+    summary = pipeline.run(r2_client=s3)
+
+    with Session(engine) as s:
+        assert _contacts_by_external_id(s)["1002"]["phone"] == "052 999 999"
+    assert summary.institutions.updated == 1
+    assert summary.institutions.unchanged == EXPECTED_INSTITUTIONS - 1
+
+
+@mock_aws
+def test_mixed_contacts_do_not_cross_contaminate(
+    engine: Engine, r2_env: dict[str, str], snapshot_dict: dict[str, Any]
+) -> None:
+    s3 = boto3.client("s3", region_name="us-east-1")
+    _put_snapshot(s3, _with_contacts(snapshot_dict, external_ids={"1001", "1003"}))
+
+    pipeline.run(r2_client=s3)
+
+    with Session(engine) as s:
+        stored = _contacts_by_external_id(s)
+    assert stored["1001"] == _contacts_for("1001")
+    assert stored["1003"] == _contacts_for("1003")
+    assert stored["1002"] == {f: None for f in CONTACT_FIELDS}
+    assert stored["1004"] == {f: None for f in CONTACT_FIELDS}
+
+
 @mock_aws
 def test_disappeared_institution(
     engine: Engine, r2_env: dict[str, str], snapshot_dict: dict[str, Any]
