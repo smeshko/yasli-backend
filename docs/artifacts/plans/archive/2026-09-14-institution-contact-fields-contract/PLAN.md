@@ -5,7 +5,7 @@ Branch: feature/institution-contact-fields-contract
 Risk: medium
 Epic: 01 — Institution data foundation ([epic](../../../epics/01-institution-data-foundation.md))
 Phase: 1.1 — Persist source contact metadata
-Linear: none
+Linear: YAS-6
 Created: 2026-08-17
 
 ## Goal

@@ -3,9 +3,9 @@
 Status: in progress
 Created: 2026-08-17
 Depends on: none
-Project: none
-Linear: none
-Milestone: none
+Project: institution-profiles
+Linear: YAS-1 (https://linear.app/ivo-tsonev/issue/YAS-1)
+Milestone: 9d0abf16-a01f-41ca-871e-9cf453a67e6d
 
 ## Overview
 
@@ -51,7 +51,7 @@ phase 1.1), or ingest rejects the snapshot outright.
 
 **Plan**: [institution-contact-fields-contract](../plans/archive/2026-09-14-institution-contact-fields-contract/PLAN.md) · status: done
 
-**Linear**: none
+**Linear**: YAS-6 (https://linear.app/ivo-tsonev/issue/YAS-6)
 
 **Goal**: The backend accepts and stores phone, e-mail, director and website on institutions, tolerating snapshots that omit them.
 
@@ -80,7 +80,7 @@ Run `just be-migrate` then `just be-ingest` against the real R2 snapshot and sho
 
 **Plan**: [institution-locations-dataset](../plans/institution-locations-dataset/PLAN.md) · status: planned
 
-**Linear**: none
+**Linear**: YAS-7 (https://linear.app/ivo-tsonev/issue/YAS-7)
 
 **Goal**: Coordinates for all 77 institutions and the 12 addressed branch buildings load into the database from a committed file. Rows that pass strict automatic checks are accepted; only the rest are reviewed by a person, in a local map review tool.
 
@@ -117,7 +117,7 @@ Run the loader against a fresh database and show the row counts by `role`, `prec
 
 **Plan**: [institution-profile-endpoint](../plans/institution-profile-endpoint/PLAN.md) · status: planned
 
-**Linear**: none
+**Linear**: YAS-8 (https://linear.app/ivo-tsonev/issue/YAS-8)
 
 **Goal**: The institution detail endpoint returns address, contacts, district, coordinates and branches, and is addressable by (kind, external_id).
 

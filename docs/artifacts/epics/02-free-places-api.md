@@ -3,9 +3,9 @@
 Status: planned
 Created: 2026-08-17
 Depends on: Epic 01
-Project: none
-Linear: none
-Milestone: none
+Project: institution-profiles
+Linear: YAS-2 (https://linear.app/ivo-tsonev/issue/YAS-2)
+Milestone: 56acf8f6-b6d9-4430-ae49-62e9aec24670
 
 ## Overview
 
@@ -41,7 +41,7 @@ cache and its own visible date rather than borrowing the snapshot's freshness.
 
 **Plan**: _not yet created_
 
-**Linear**: none
+**Linear**: YAS-9 (https://linear.app/ivo-tsonev/issue/YAS-9)
 
 **Goal**: The backend serves the source portal's free-places table as cached JSON, carrying its own date and finality flag.
 
