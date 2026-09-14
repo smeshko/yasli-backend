@@ -1,0 +1,1 @@
+Linear: team **Yasli** — create epic and phase issues from the workspace `Epic` / `Phase` issue templates (read the template with `get_template`, fill every section, and pass the full description since it replaces the template body).
