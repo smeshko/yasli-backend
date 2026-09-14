@@ -2,6 +2,11 @@
 `yasli/scraper/src/yasli_scraper/models.py`. The two copies must stay
 byte-for-byte equivalent in their generated JSON Schema; the drift test in
 `tests/snapshot_contract/test_schema_match.py` enforces that.
+
+The contact fields (`phone`, `email`, `director`, `website`) were added here
+first: this copy is intentionally one phase ahead of the scraper until it
+starts emitting them (epic 01, phase 1.2), because both sides validate with
+`extra="forbid"` and the backend must accept the fields before they arrive.
 """
 
 from __future__ import annotations
@@ -15,6 +20,7 @@ from pydantic import (
     ConfigDict,
     Field,
     HttpUrl,
+    ValidationInfo,
     field_validator,
     field_serializer,
     model_validator,
@@ -50,14 +56,20 @@ class Institution(BaseModel):
     source_url: HttpsUrl
     address_entries: list[AddressEntry]
     address: str | None = None
+    phone: str | None = None
+    email: str | None = None
+    director: str | None = None
+    website: str | None = None
     district_code: DistrictCode | None = None
     has_infant_group: bool
 
-    @field_validator("address")
+    @field_validator("address", "phone", "email", "director", "website")
     @classmethod
-    def _address_non_empty(cls, value: str | None) -> str | None:
+    def _optional_strings_non_empty(
+        cls, value: str | None, info: ValidationInfo
+    ) -> str | None:
         if value == "":
-            raise ValueError("address must be non-empty or null")
+            raise ValueError(f"{info.field_name} must be non-empty or null")
         return value
 
     @model_validator(mode="after")

@@ -45,6 +45,18 @@
           "title": "Address Entries",
           "type": "array"
         },
+        "director": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Director"
+        },
         "district_code": {
           "anyOf": [
             {
@@ -63,6 +75,18 @@
           ],
           "default": null,
           "title": "District Code"
+        },
+        "email": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Email"
         },
         "external_id": {
           "minLength": 1,
@@ -87,12 +111,36 @@
           "title": "Name",
           "type": "string"
         },
+        "phone": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Phone"
+        },
         "source_url": {
           "format": "uri",
           "maxLength": 2083,
           "minLength": 1,
           "title": "Source Url",
           "type": "string"
+        },
+        "website": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Website"
         }
       },
       "required": [
