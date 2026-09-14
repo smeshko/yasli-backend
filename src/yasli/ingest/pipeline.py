@@ -345,6 +345,10 @@ def _build_plan(snapshot: Snapshot) -> _IngestPlan:
             "kind": inst.kind,
             "source_url": str(inst.source_url),
             "address": inst.address,
+            "phone": inst.phone,
+            "email": inst.email,
+            "director": inst.director,
+            "website": inst.website,
             "district_code": inst.district_code,
             "has_infant_group": inst.has_infant_group,
             "last_seen_at": snapshot.scraped_at,
@@ -424,6 +428,12 @@ def _upsert_institutions(
             "name": stmt.excluded.name,
             "source_url": stmt.excluded.source_url,
             "address": stmt.excluded.address,
+            # Contacts overwrite plainly: a NULL means the source dropped
+            # the value, so it must not be preserved like district_code.
+            "phone": stmt.excluded.phone,
+            "email": stmt.excluded.email,
+            "director": stmt.excluded.director,
+            "website": stmt.excluded.website,
             # Snapshot NULL means "backend-derived" for KG/PG. Preserve an
             # existing district stamp so weekly ingest stays idempotent;
             # the quarterly restamp command intentionally changes derived
@@ -445,7 +455,15 @@ def _upsert_institutions(
         # `last_seen_at` is intentionally excluded — a snapshot-time bump
         # alone counts as unchanged for the operator-readable summary.
         value_columns_for_unchanged=(
-            "name", "source_url", "address", "district_code", "has_infant_group",
+            "name",
+            "source_url",
+            "address",
+            "phone",
+            "email",
+            "director",
+            "website",
+            "district_code",
+            "has_infant_group",
         ),
         preserve_old_on_null_columns=("district_code",),
         returning_columns=("id", "external_id", "kind"),

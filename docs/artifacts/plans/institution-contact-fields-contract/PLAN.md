@@ -110,5 +110,5 @@ Task state lives here. Tasks are appended by `scripts/add_task.py` and
 
 - [x] TASK-001: Accept contact fields in the vendored snapshot contract
 - [x] TASK-002: Add nullable contact columns to institutions (depends on TASK-001)
-- [ ] TASK-003: Map contact fields through ingest (depends on TASK-002)
+- [x] TASK-003: Map contact fields through ingest (depends on TASK-002)
 - [ ] TASK-004: Final Validation
