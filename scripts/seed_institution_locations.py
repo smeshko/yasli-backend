@@ -486,6 +486,10 @@ def prune_stale_branches(
 
 
 
+def _with_address_changed(flags: Iterable[str]) -> list[str]:
+    return ["address_changed", *(f for f in flags if f != "address_changed")]
+
+
 def plan_refresh(
     existing: Mapping[state.Key, Mapping[str, Any]],
     institutions: Mapping[tuple[str, str], Mapping[str, Any]],
@@ -498,9 +502,16 @@ def plan_refresh(
     replaced by a pending entry under the new address, flagged
     ``address_changed``, carrying the previous key and decision — whatever
     its previous decision was.
+
+    ``existing`` can hold both the old-address and the new-address entry of
+    one institution (a rebuild from a committed file that still has the old
+    row, next to a local new-address entry). The outcome must not depend on
+    which is visited first: the new-address entry always carries
+    ``address_changed`` while it is pending, and a person's decision on the
+    new address stands alone, with the old-address entry dropped.
     """
     to_gather: dict[state.Key, dict[str, Any]] = {}
-    kept: list[dict[str, Any]] = []
+    kept: dict[state.Key, dict[str, Any]] = {}
     for key, entry in existing.items():
         kind, external_id, role, _label, address = key
         inst = institutions.get((kind, external_id))
@@ -510,21 +521,28 @@ def plan_refresh(
         current = inst.get("address") or ""
         if role == "main" and normalise_address(address) != normalise_address(current):
             new_key: state.Key = (kind, external_id, "main", "", current)
+            if new_key in kept:
+                continue  # a person already decided the new address
+            already = to_gather.get(new_key, {})
             to_gather[new_key] = {
                 "key": state.key_dict(new_key),
                 "name": inst["name"],
                 "address_settlement": settlement_from_address(current),
-                "candidates": [],
-                "flags": ["address_changed"],
+                "candidates": list(already.get("candidates", [])),
+                "flags": _with_address_changed(already.get("flags", [])),
                 "decision": state.make_decision("pending"),
                 "previous": {"key": dict(entry["key"]), "decision": dict(entry["decision"])},
             }
             continue
+        moved = to_gather.pop(key, None)  # the old-address entry was visited first
         if entry["decision"]["status"] in ("accepted", "pinned", "no_pin"):
-            kept.append(dict(entry))
+            kept[key] = dict(entry)
         else:
             to_gather[key] = dict(entry)
-    return to_gather, kept
+            if moved is not None:
+                to_gather[key]["flags"] = _with_address_changed(entry.get("flags", []))
+                to_gather[key]["previous"] = moved["previous"]
+    return to_gather, list(kept.values())
 
 
 # --- network (thin, untested) ---------------------------------------------------------------

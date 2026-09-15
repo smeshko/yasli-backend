@@ -591,6 +591,32 @@ def test_plan_refresh_resets_a_moved_institution_to_pending_with_address_changed
     assert seeded["previous"]["decision"]["status"] == "accepted"
 
 
+def test_plan_refresh_flags_address_changed_whichever_entry_is_visited_first() -> None:
+    """Both the old-address and the new-address entry can be present (a
+    rebuild from a committed file that still has the old row). Dict order
+    must not decide whether the moved institution goes to review."""
+    new_address = 'ул. "Тодор Икономов" №26'
+    institutions = {("kindergarten", "46"): {"name": 'ДГ№13 "Мир"', "address": new_address}}
+    old = _entry("accepted", candidate=0)  # decided against the old address
+    new = _entry("pending", address=new_address, candidates=[_geo()], flags=[])
+    for order in ((old, new), (new, old)):
+        existing = {state.entry_key(e): e for e in order}
+        to_gather, kept_entries = seed.plan_refresh(existing, institutions)
+        assert kept_entries == []
+        ((key, seeded),) = to_gather.items()
+        assert key[4] == new_address
+        assert seeded["flags"] == ["address_changed"]
+        assert seeded["decision"]["status"] == "pending"
+        assert seeded["previous"]["decision"]["status"] == "accepted"
+    # A person's decision on the new address stands alone in either order.
+    decided = _entry("pinned", address=new_address, lat=43.21, lon=27.92, precision="building")
+    for order in ((old, decided), (decided, old)):
+        existing = {state.entry_key(e): e for e in order}
+        to_gather, kept_entries = seed.plan_refresh(existing, institutions)
+        assert to_gather == {}
+        assert [e["decision"]["status"] for e in kept_entries] == ["pinned"]
+
+
 def test_plan_refresh_quote_style_change_is_not_a_move() -> None:
     institutions = {
         ("kindergarten", "46"): {"name": 'ДГ№13 "Мир"',
