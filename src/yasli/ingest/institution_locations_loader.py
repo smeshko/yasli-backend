@@ -412,20 +412,25 @@ def render_provenance(provenance: Mapping[str, dict[str, Any]]) -> str:
     return json.dumps(dict(sorted(provenance.items())), ensure_ascii=False, indent=2) + "\n"
 
 
-def _atomic_write(path: Path, text: str) -> None:
+def _unlink_quietly(tmp_name: str) -> None:
+    try:
+        os.unlink(tmp_name)
+    except FileNotFoundError:
+        pass
+
+
+def _stage(path: Path, text: str) -> str:
+    """Write ``text`` to a sibling temp file, ready for ``os.replace``."""
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
     try:
         with os.fdopen(fd, "w", encoding="utf-8", newline="") as fh:
             fh.write(text)
         os.chmod(tmp_name, 0o644)  # mkstemp creates 0600; these are committed files
-        os.replace(tmp_name, path)
     except BaseException:
-        try:
-            os.unlink(tmp_name)
-        except FileNotFoundError:
-            pass
+        _unlink_quietly(tmp_name)
         raise
+    return tmp_name
 
 
 def write_file(
@@ -439,14 +444,30 @@ def write_file(
     file and rename.
 
     A rejected batch raises :class:`LocationRowError` before either file is
-    touched, so the old files stay intact. Returns the parsed rows.
+    touched, so the old files stay intact. Both temp files are staged
+    before either rename, so the only window in which the pair can be torn
+    is the two ``os.replace`` calls, and the CSV is renamed first so that
+    window leaves exactly one shape — new CSV, old provenance — which the
+    review tool's state module recognises and regenerates from the
+    candidates file. Keep that order. Returns the parsed rows.
     """
     if provenance_path is None:
         provenance_path = path.with_name("institution_locations.provenance.json")
     csv_text = render_csv(rows)
     parsed = list(parse_rows(csv.DictReader(io.StringIO(csv_text)), provenance))
-    _atomic_write(path, csv_text)
-    _atomic_write(provenance_path, render_provenance(provenance))
+    csv_tmp = _stage(path, csv_text)
+    try:
+        provenance_tmp = _stage(provenance_path, render_provenance(provenance))
+    except BaseException:
+        _unlink_quietly(csv_tmp)
+        raise
+    try:
+        os.replace(csv_tmp, path)
+        os.replace(provenance_tmp, provenance_path)
+    except BaseException:
+        _unlink_quietly(csv_tmp)
+        _unlink_quietly(provenance_tmp)
+        raise
     return parsed
 
 

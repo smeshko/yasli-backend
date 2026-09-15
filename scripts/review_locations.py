@@ -21,8 +21,9 @@ back as ``422`` with the parser's message and nothing is written.
 On startup the lineage rule in ``scripts.location_review.state`` decides
 whether the local candidates file or the committed files win, then the
 derived files are regenerated — which also repairs a crash between the
-candidates write and the derived writes. With no candidates file at all the
-tool refuses to start and points at the seed script.
+candidates write and the derived writes, or between the CSV rename and the
+provenance rename. With no candidates file at all the tool refuses to start
+and points at the seed script.
 
 Never imported by ``src/yasli``; never deployed. The page loads the map
 library and tiles from the network; nothing in it calls a geocoder.
@@ -47,8 +48,6 @@ from yasli.ingest.institution_locations_loader import (
     DEFAULT_CSV,
     DEFAULT_PROVENANCE,
     LocationRowError,
-    load_provenance,
-    parse_file,
 )
 
 log = logging.getLogger("scripts.review_locations")
@@ -75,21 +74,22 @@ class ReviewState:
                 f"{candidates_path} does not exist. Run `{SEED_COMMAND}` first — it gathers "
                 "candidates and rebuilds decisions from the committed CSV and provenance file."
             )
-        committed_rows = (
-            list(parse_file(csv_path, provenance_path=provenance_path)) if csv_path.exists() else []
+        committed_rows, committed_provenance, committed_hash_value, torn = state.load_committed(
+            csv_path, provenance_path, doc
         )
-        committed_provenance = load_provenance(provenance_path)
         self.entries, rebuilt = state.reconcile(
-            doc,
-            committed_rows,
-            committed_provenance,
-            state.committed_hash(csv_path, provenance_path),
+            doc, committed_rows, committed_provenance, committed_hash_value, torn=torn
         )
         log.info(
             "%s: %d entries — %s",
             candidates_path,
             len(self.entries),
-            "decisions rebuilt from the committed files" if rebuilt else "local decisions kept",
+            "CSV and provenance file were torn by an interrupted save; regenerating both "
+            "from the candidates file"
+            if torn
+            else "decisions rebuilt from the committed files"
+            if rebuilt
+            else "local decisions kept",
         )
         self.undo_stack: list[tuple[state.Key, dict[str, Any]]] = []
         self.lock = threading.Lock()

@@ -27,7 +27,11 @@ matching hash means the candidates file is in sync or ahead (a crash between
 the writes) and its decisions stand; a mismatch, or no candidates file at
 all, rebuilds every decision from the committed files and keeps only
 candidates and flags from local state. A stale local file can never revert a
-newer committed one.
+newer committed one. The one pair the strict parser must not be asked to
+read — a new CSV next to the previous provenance file, left by a crash
+between ``write_file``'s two renames — is recognised by
+:func:`load_committed` (the CSV is byte-identical to what the candidates
+file regenerates) and repaired from the candidates file.
 
 Only decided entries — ``auto``, ``accepted``, ``pinned``, ``no_pin`` — are
 written to the CSV. A ``pending`` row is simply absent, and the loader's
@@ -296,23 +300,74 @@ def committed_hash(csv_path: Path, provenance_path: Path) -> str | None:
     )
 
 
+def load_committed(
+    csv_path: Path, provenance_path: Path, doc: Mapping[str, Any] | None
+) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]], str | None, bool]:
+    """Parse the committed pair for :func:`reconcile`: ``(rows, provenance,
+    hash, torn)``.
+
+    ``torn`` is the one parse failure that is repaired rather than raised:
+    a crash between ``write_file``'s two renames leaves a new CSV next to
+    the previous provenance file, which the parser's provenance cross-check
+    rejects. It is recognised, never guessed — the CSV on disk is
+    byte-identical to what the local candidates file regenerates, and only
+    ``persist`` can have produced that, after it wrote the candidates file.
+    The caller keeps the local decisions and regenerates both files. The
+    provenance file is no evidence either way (it is the *old* half of a
+    torn pair, so a stale candidates file would match it too), which is
+    why this relies on ``write_file`` renaming the CSV first. Every other
+    parse failure propagates, so a hand-corrupted committed file is never
+    silently overwritten.
+    """
+    from yasli.ingest.institution_locations_loader import (
+        LocationRowError,
+        load_provenance,
+        parse_file,
+    )
+
+    if not csv_path.exists():
+        return [], load_provenance(provenance_path), None, False
+    try:
+        rows = list(parse_file(csv_path, provenance_path=provenance_path))
+    except LocationRowError:
+        if doc is not None and _csv_matches_local(doc, csv_path):
+            return [], {}, None, True
+        raise
+    provenance = load_provenance(provenance_path)
+    return rows, provenance, committed_hash(csv_path, provenance_path), False
+
+
+def _csv_matches_local(doc: Mapping[str, Any], csv_path: Path) -> bool:
+    """True when the CSV on disk is exactly what the candidates file would
+    regenerate."""
+    from yasli.ingest.institution_locations_loader import render_csv
+
+    try:
+        rows, _provenance = render_csv_rows(doc.get("entries", []))
+        return csv_path.read_bytes() == render_csv(rows).encode("utf-8")
+    except (KeyError, TypeError, ValueError, ArithmeticError):
+        return False  # the candidates file cannot vouch for anything
+
+
 def reconcile(
     doc: Mapping[str, Any] | None,
     committed_rows: Iterable[Mapping[str, Any]],
     committed_provenance: Mapping[str, dict[str, Any]],
     committed_hash_value: str | None,
+    *,
+    torn: bool = False,
 ) -> tuple[dict[Key, dict[str, Any]], bool]:
     """Apply the lineage rule. Returns ``(entries_by_key, rebuilt)``.
 
-    With a matching hash the local decisions stand. Otherwise every decision
-    is rebuilt from the committed files; local entries keep their
-    candidates and flags, and a local entry with no committed row becomes
-    ``pending``.
+    With a matching hash — or a committed pair :func:`load_committed`
+    found torn — the local decisions stand. Otherwise every decision is
+    rebuilt from the committed files; local entries keep their candidates
+    and flags, and a local entry with no committed row becomes ``pending``.
     """
     local: dict[Key, dict[str, Any]] = {
         entry_key(e): dict(e) for e in (doc or {}).get("entries", [])
     }
-    if doc is not None and doc.get("source_hash") == committed_hash_value:
+    if doc is not None and (torn or doc.get("source_hash") == committed_hash_value):
         return local, False
 
     entries: dict[Key, dict[str, Any]] = {}
@@ -380,7 +435,10 @@ def persist(
     the next start regenerates the derived files from the candidates file;
     a crash between the second and third leaves a mismatch, and the next
     start rebuilds from the committed files, which already carry the
-    decision. Nothing is lost either way.
+    decision; a crash inside the second, between the CSV rename and the
+    provenance rename, leaves a torn pair that :func:`load_committed`
+    recognises and the next start regenerates from the candidates file.
+    Nothing is lost in any of the three.
     """
     from yasli.ingest.institution_locations_loader import write_file  # local: keeps import light
 
