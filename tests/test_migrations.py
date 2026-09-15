@@ -120,7 +120,7 @@ def test_round_trip_upgrade_downgrade_upgrade(fresh_db: str) -> None:
     up1 = _alembic(["upgrade", "head"], url)
     assert up1.returncode == 0, up1.stderr
     eng = _engine(url)
-    assert _current_revision(eng) == "0009"
+    assert _current_revision(eng) == "0010"
     tables = _table_names(eng)
     assert {
         "institutions",
@@ -129,6 +129,7 @@ def test_round_trip_upgrade_downgrade_upgrade(fresh_db: str) -> None:
         "address_institutions",
         "grao_addresses",
         "settlements",
+        "institution_locations",
     }.issubset(tables)
     assert "address_entries" not in tables
     # The addresses.district_code column is present at head.
@@ -146,31 +147,36 @@ def test_round_trip_upgrade_downgrade_upgrade(fresh_db: str) -> None:
     assert settlement_count == 6
     eng.dispose()
 
-    # 0009 → 0008 drops exactly the contact columns.
+    # 0010 → 0009 drops exactly institution_locations; the contact columns stay.
     down_one = _alembic(["downgrade", "-1"], url)
     assert down_one.returncode == 0, down_one.stderr
     eng = _engine(url)
-    assert _current_revision(eng) == "0008"
+    assert _current_revision(eng) == "0009"
+    assert "institution_locations" not in _table_names(eng)
     inst_columns = {c["name"] for c in inspect(eng).get_columns("institutions")}
-    assert not CONTACT_COLUMNS & inst_columns
+    assert CONTACT_COLUMNS.issubset(inst_columns)
     assert {"address", "district_code", "has_infant_group"}.issubset(inst_columns)
     eng.dispose()
 
+    # 0009 → 0007: the contact columns and the 0008 index go, settlements stays.
     down = _alembic(["downgrade", "-2"], url)
     assert down.returncode == 0, down.stderr
     eng = _engine(url)
-    assert _current_revision(eng) == "0006"
+    assert _current_revision(eng) == "0007"
     tables = _table_names(eng)
-    # 0006 shape: settlement_code remains on addresses, and only the
-    # settlements table from revision 0007 is removed.
     assert {
         "institutions",
         "streets",
         "addresses",
         "address_institutions",
         "grao_addresses",
+        "settlements",
     }.issubset(tables)
-    assert "settlements" not in tables
+    assert "institution_locations" not in tables
+    inst_columns = {c["name"] for c in inspect(eng).get_columns("institutions")}
+    assert not CONTACT_COLUMNS & inst_columns
+    index_names = {i["name"] for i in inspect(eng).get_indexes("address_institutions")}
+    assert "ix_address_institutions_institution_id" not in index_names
     addr_columns = {c["name"] for c in inspect(eng).get_columns("addresses")}
     assert "district_code" in addr_columns
     assert "settlement_code" in addr_columns
@@ -181,7 +187,7 @@ def test_round_trip_upgrade_downgrade_upgrade(fresh_db: str) -> None:
     up2 = _alembic(["upgrade", "head"], url)
     assert up2.returncode == 0, up2.stderr
     eng = _engine(url)
-    assert _current_revision(eng) == "0009"
+    assert _current_revision(eng) == "0010"
     tables = _table_names(eng)
     assert {
         "institutions",
@@ -190,6 +196,7 @@ def test_round_trip_upgrade_downgrade_upgrade(fresh_db: str) -> None:
         "address_institutions",
         "grao_addresses",
         "settlements",
+        "institution_locations",
     }.issubset(tables)
     addr_columns = {c["name"] for c in inspect(eng).get_columns("addresses")}
     assert "district_code" in addr_columns
@@ -637,3 +644,86 @@ def test_address_institutions_institution_id_index_present(fresh_db: str) -> Non
     assert len(rows) == 1
     indexdef = rows[0][0].lower()
     assert "institution_id" in indexdef
+
+
+def test_institution_locations_columns_constraints_and_index(fresh_db: str) -> None:
+    """institution_locations (revision 0010): columns, CHECKs, UNIQUE, FK and
+    the partial unique index over ``(kind, external_id) WHERE role = 'main'``."""
+    url = fresh_db
+    up = _alembic(["upgrade", "head"], url)
+    assert up.returncode == 0, up.stderr
+
+    eng = _engine(url)
+    try:
+        insp = inspect(eng)
+        columns = {c["name"]: c for c in insp.get_columns("institution_locations")}
+        assert set(columns) == {
+            "id",
+            "kind",
+            "external_id",
+            "role",
+            "label",
+            "address",
+            "lat",
+            "lon",
+            "precision",
+            "source",
+            "verification",
+            "verified_at",
+        }
+        for name in ("lat", "lon"):
+            assert columns[name]["nullable"] is True, name
+        for name in set(columns) - {"lat", "lon"}:
+            assert columns[name]["nullable"] is False, name
+        assert str(columns["id"]["type"]).upper() == "BIGINT"
+        assert str(columns["lat"]["type"]).upper() == "NUMERIC(9, 6)"
+
+        with eng.connect() as conn:
+            constraints = {
+                row[0]
+                for row in conn.execute(
+                    text(
+                        "SELECT conname FROM pg_constraint "
+                        "WHERE conrelid = 'institution_locations'::regclass"
+                    )
+                ).all()
+            }
+            indexdefs = {
+                row[0]: row[1]
+                for row in conn.execute(
+                    text(
+                        "SELECT indexname, indexdef FROM pg_indexes "
+                        "WHERE tablename = 'institution_locations'"
+                    )
+                ).all()
+            }
+        assert {
+            "institution_locations_pkey",
+            "uq_institution_locations_building",
+            "fk_institution_locations_institution",
+            "ck_institution_locations_kind",
+            "ck_institution_locations_role",
+            "ck_institution_locations_precision",
+            "ck_institution_locations_source",
+            "ck_institution_locations_verification",
+            "ck_institution_locations_coordinate_pair",
+            "ck_institution_locations_precision_none",
+            "ck_institution_locations_manual_not_auto",
+            "ck_institution_locations_auto_shape",
+        } <= constraints
+        main_index = indexdefs["uq_institution_locations_main"].lower()
+        assert "unique" in main_index
+        assert "(kind, external_id)" in main_index
+        assert "where" in main_index and "'main'" in main_index
+
+        fk = next(
+            f for f in insp.get_foreign_keys("institution_locations")
+            if f["name"] == "fk_institution_locations_institution"
+        )
+        assert fk["constrained_columns"] == ["external_id", "kind"]
+        assert fk["referred_table"] == "institutions"
+        assert fk["referred_columns"] == ["external_id", "kind"]
+        assert fk["options"].get("ondelete") == "RESTRICT"
+        assert fk["options"].get("onupdate") == "CASCADE"
+    finally:
+        eng.dispose()

@@ -37,3 +37,6 @@ target-version = "py312"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"
+# Lets tests import the one-off scripts (`scripts.seed_institution_locations`,
+# `scripts.location_review`); `testpaths` keeps scripts/ out of collection.
+pythonpath = ["."]

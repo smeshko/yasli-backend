@@ -1,0 +1,95 @@
+kind,external_id,role,label,address,lat,lon,precision,source,verification,verified_at
+kindergarten,102,main,,"гр. Варна, ул.“Велчова завера“ № 12",43.209708,27.890355,building,manual,human,2026-09-15
+kindergarten,103,main,,"гр. Варна, ул. ""Капитан Райчо Николов"" 103 А",43.215467,27.892919,building,manual,human,2026-09-15
+kindergarten,34,branch,,"ул.""Жолио Кюри""№51,вх.Г,ет.1.ап.3",43.208075,27.904115,building,manual,human,2026-09-15
+kindergarten,34,main,,"гр. Варна, ул.""Парижка комуна"" №25",43.205838,27.904386,building,manual,human,2026-09-15
+kindergarten,35,branch,,"ул.""Батак""№6",43.203611,27.903855,building,manual,human,2026-09-15
+kindergarten,35,branch,,"ул.""Батак""№8",43.203462,27.903011,building,manual,human,2026-09-15
+kindergarten,35,main,,"гр. Варна, ул. ""Барутен погреб"" №6",43.204041,27.898212,building,manual,human,2026-09-15
+kindergarten,36,main,,"гр. Варна, ул. ""Фредерик Жолио Кюри"" №14",43.210593,27.910475,building,osm_poi,auto,2026-09-15
+kindergarten,37,branch,,"ул. ""Кап. Райчо""",43.202023,27.913023,building,manual,human,2026-09-15
+kindergarten,37,main,,"гр. Варна, ул. ""Шейново"" №18",43.204536,27.914213,building,manual,human,2026-09-15
+kindergarten,38,branch,,"ул. ""Патриарх Евтимий"" №52",43.213513,27.900271,building,manual,human,2026-09-15
+kindergarten,38,branch,,"ул. ""Яне сандански"" №1",43.213714,27.904637,building,manual,human,2026-09-15
+kindergarten,38,main,,"гр. Варна, ул. ""Юрий Венелин"" №5",43.213995,27.904122,building,osm_poi,auto,2026-09-15
+kindergarten,39,main,,"гр. Варна, ул. ""Тодор Влайков"" №71",43.208360,27.889353,building,manual,human,2026-09-15
+kindergarten,40,main,,"гр. Варна, ул.""Стефан Караджа"" №24",43.205604,27.921990,building,manual,human,2026-09-15
+kindergarten,41,main,,"гр. Варна, ул. ""Средна гора"" №45",43.208638,27.897022,building,osm_poi,auto,2026-09-15
+kindergarten,42,main,,"гр. Варна, кв. Чайка до бл. 61",43.216317,27.945517,building,osm_poi,auto,2026-09-15
+kindergarten,43,main,,"гр. Варна, ул. ""Карамфил"" №13",43.222055,27.911227,building,manual,human,2026-09-15
+kindergarten,44,main,,"гр. Варна, ул. ""Евлоги Георгиев"" до бл. 25",43.225227,27.919895,building,osm_poi,auto,2026-09-15
+kindergarten,45,branch,,"""Добруджа""№1",43.217834,27.920528,building,manual,human,2026-09-15
+kindergarten,45,main,,"гр. Варна, ул. ""Дойран"" №9",43.215966,27.914604,building,osm_poi,human,2026-09-15
+kindergarten,46,branch,,"бул. Княз Борис I, 109",43.209885,27.928446,building,manual,human,2026-09-15
+kindergarten,46,branch,,ул. Н. Михайловски 1А,43.209341,27.926574,building,manual,human,2026-09-15
+kindergarten,46,branch,,ул. Тодор Икономов 36,43.210211,27.928085,building,manual,human,2026-09-15
+kindergarten,46,branch,,"ул. Тодор Икономов, 26",43.209883,27.927021,building,manual,human,2026-09-15
+kindergarten,46,main,,"гр. Варна, ул.""Никола Михайловски"" №6",43.209589,27.926883,building,osm_poi,auto,2026-09-15
+kindergarten,47,main,,"гр. Варна, ул.""Дубровник"" №56",43.225410,27.925778,building,manual,human,2026-09-15
+kindergarten,48,main,,"гр. Варна, ул.""В. Петлешков"" №33",43.222136,27.932451,building,osm_poi,auto,2026-09-15
+kindergarten,49,main,,"гр. Варна, ул.""Уйлям Гладстон"" №5",43.218227,27.921423,building,osm_poi,auto,2026-09-15
+kindergarten,50,branch,Другарче,,43.216930,27.923966,building,manual,human,2026-09-15
+kindergarten,50,branch,Жирафче,,43.218454,27.927346,building,manual,human,2026-09-15
+kindergarten,50,main,,"гр. Варна, ул. ""Г.Колев"" №92",43.216893,27.923951,building,manual,human,2026-09-15
+kindergarten,51,branch,Бисерче,,,,none,manual,human,2026-09-15
+kindergarten,51,main,,"гр. Варна, ж.к. ""Чайка"" до бл. 3",43.217211,27.934498,building,osm_poi,human,2026-09-15
+kindergarten,52,main,,"гр. Варна, ул.""Студентска"" №7",43.222572,27.933465,building,manual,human,2026-09-15
+kindergarten,53,main,,"гр. Варна, местност ""Салтанат"" № 83",43.212865,27.947969,building,manual,human,2026-09-15
+kindergarten,54,main,,"гр. Варна, ж.к. ""Чайка"" до бл.40",43.217602,27.938426,building,osm_poi,auto,2026-09-15
+kindergarten,55,main,,"гр. Варна, кв. ""Чайка"" до бл.43",43.216424,27.940245,building,manual,human,2026-09-15
+kindergarten,56,main,,"гр. Варна, кв. Виница, ул. ""Лазур"" №2",43.247704,27.985164,building,manual,human,2026-09-15
+kindergarten,57,main,,"гр. Варна, ул. ""Никола Симов"" № 6",43.225878,27.873007,building,osm_poi,auto,2026-09-15
+kindergarten,58,main,,"гр. Варна, ж.к. ""Младост"" до бл.127",43.232039,27.882076,building,nominatim,human,2026-09-15
+kindergarten,59,main,,"гр. Варна, ул. “Хан Кубрат” №40",43.221932,27.883028,building,osm_poi,auto,2026-09-15
+kindergarten,60,main,,"гр. Варна, ул.""Петко Стайнов"" №3",43.225628,27.898291,building,osm_poi,human,2026-09-15
+kindergarten,61,main,,"гр. Варна, ж.к.""Трошево"", ул.""Милосърдие"" №10",43.223675,27.883171,building,osm_poi,auto,2026-09-15
+kindergarten,62,main,,"гр. Варна, ж.к. ""Възраждане"" до бл. 56",43.234822,27.891744,building,osm_poi,human,2026-09-15
+kindergarten,63,main,,"гр. Варна, ж.к.""Младост"" до бл. 110",43.230531,27.875259,building,osm_poi,human,2026-09-15
+kindergarten,64,main,,"гр. Варна, ж.к.""Възраждане"" до бл.53",43.235846,27.886511,building,osm_poi,auto,2026-09-15
+kindergarten,65,main,,"гр. Варна, ж.к.""Младост"" до бл. 146",43.230068,27.886414,building,osm_poi,human,2026-09-15
+kindergarten,66,main,,"гр. Варна, бул. ""Република"" до м-н ""Кауфланд"" в р-н ""Младост""",43.236861,27.880707,building,osm_poi,auto,2026-09-15
+kindergarten,67,main,,"гр. Варна, ж.к. Възраждане-1 до бл.3",43.236441,27.873222,building,osm_poi,auto,2026-09-15
+kindergarten,68,main,,"гр. Варна, ж.к.""Победа"" до бл.10",43.223917,27.902604,building,osm_poi,auto,2026-09-15
+kindergarten,69,main,,"гр. Варна, ж.к. ""Младост"" до бл. 153 и бл. 104",43.231797,27.873446,building,osm_poi,auto,2026-09-15
+kindergarten,70,main,,"гр. Варна, ж.к. ""Вл. Варненчик"" до бл.402",43.249425,27.844186,building,manual,human,2026-09-15
+kindergarten,71,main,,"гр. Варна, ж.к.""Владислав Варненчик"" до блок 20",43.247790,27.850777,building,osm_poi,auto,2026-09-15
+kindergarten,72,branch,,"ж.к. „Владислав Варненчик втори микро район "" бл.209",43.241235,27.861492,building,manual,human,2026-09-15
+kindergarten,72,branch,,"ж.к. „Владислав Варненчик втори микро район"" бл.210",43.235384,27.862807,building,manual,human,2026-09-15
+kindergarten,72,main,,"гр. Варна, ж.к.""Вл. Варненчик"" до бл.208",43.238574,27.860523,building,osm_poi,auto,2026-09-15
+kindergarten,73,main,,"гр. Варна, ул. ""6-ти септември"" до бл.9",43.244976,27.854209,building,manual,human,2026-09-15
+kindergarten,74,main,,"гр. Варна, ж.к.""Вл. Варненчик"" до бл.309",43.244828,27.845885,building,manual,human,2026-09-15
+kindergarten,75,main,,"гр. Варна, ж.к. ""Владислав Варненчик"" до бл.21",43.248479,27.850817,building,osm_poi,auto,2026-09-15
+kindergarten,76,main,,"гр. Варна, кв. Аспарухово, к-с Дружба",43.182956,27.896004,building,osm_poi,auto,2026-09-15
+kindergarten,77,branch,,ул. Кишинев № 11,43.183026,27.883452,building,manual,human,2026-09-15
+kindergarten,77,main,,"гр. Варна, ул. ""Кирил Пейчинович"" №19",43.181590,27.901220,building,manual,human,2026-09-15
+kindergarten,78,main,,"гр. Варна, ул.""Народни будители"" №8",43.185344,27.889076,building,osm_poi,auto,2026-09-15
+kindergarten,79,main,,"гр. Варна,КВ.Аспарухово, ул.Г.Стаматов 1",43.176719,27.902538,building,osm_poi,auto,2026-09-15
+kindergarten,80,main,,"гр. Варна, кв. Галата, ул. ""Адмирал Грейг"" №21",43.165320,27.935582,building,osm_poi,auto,2026-09-15
+kindergarten,81,main,,"с. Тополи, ул. ""Здравец"" №1",43.216979,27.824548,building,manual,human,2026-09-15
+kindergarten,82,main,,с.Каменар,43.245654,27.901490,building,manual,human,2026-09-15
+kindergarten,83,main,,"с. Звездица, ул. Феникс 47",43.156246,27.839310,building,manual,human,2026-09-15
+kindergarten,84,main,,"ул.""Васил Левски""№23",43.162001,27.781813,building,manual,human,2026-09-15
+nursery,1,main,,"ул. ""Славянска"" 21",43.206794,27.924536,building,manual,human,2026-09-15
+nursery,10,main,,"кв. Трошево, до бл.20",43.226089,27.884396,building,osm_poi,human,2026-09-15
+nursery,11,main,,ул. Любчо Патронов №1,43.229968,27.887333,building,osm_poi,auto,2026-09-15
+nursery,12,main,,"ул. ""Рила"" 2",43.210858,27.912865,building,osm_poi,human,2026-09-15
+nursery,2,main,,"кв. Чайка, ул. ""Рупи"" 2",43.216425,27.944410,building,osm_poi,human,2026-09-15
+nursery,3,main,,"ул. ""Никола Кънев"" 28",43.205328,27.904888,building,osm_poi,auto,2026-09-15
+nursery,4,main,,"бул. ""Чаталджа"" 111",43.215866,27.918633,building,osm_poi,auto,2026-09-15
+nursery,5,main,,"ул. ""Димитър Полянов"" 3",43.218666,27.887155,building,osm_poi,auto,2026-09-15
+nursery,6,main,,"кв. Владиславово, ул. ""Ниш"" 29",43.247071,27.853936,building,manual,human,2026-09-15
+nursery,7,main,,"ул. ""Роза"" 34",43.225861,27.914699,building,osm_poi,auto,2026-09-15
+nursery,8,main,,"ул. ""Евлоги Георгиев"" 28",43.225199,27.921055,building,manual,human,2026-09-15
+nursery,9,main,,"кв. Аспарухово, ул. ""Средец"" 12",43.181781,27.894382,building,osm_poi,human,2026-09-15
+preschool,10,main,,"кв. „Галата“, ул. „Капитан I-ви ранг Георги Купов""",43.162645,27.938025,building,osm_poi,auto,2026-09-15
+preschool,11,main,,"9009, ул.Козница №1",43.213391,27.885634,building,osm_poi,auto,2026-09-15
+preschool,12,main,,"9022, Ул. ""Св.Димитър Солунски"" 4",43.246062,27.979951,building,osm_poi,auto,2026-09-15
+preschool,22,main,,"9010, ул. ""Роза"" 23",43.224818,27.915018,building,osm_poi,auto,2026-09-15
+preschool,23,main,,"9020, ж.к.""Възраждане""-ІІ",43.236858,27.884607,building,manual,human,2026-09-15
+preschool,28,main,,"9008, ул. ""Тодор Влайков"" №18",43.207779,27.896276,building,osm_poi,auto,2026-09-15
+preschool,29,main,,"9003, ул. ""Народни будители""№17а",43.182890,27.892579,building,osm_poi,auto,2026-09-15
+preschool,32,main,,"9000, ул. ""Русе"" №2",43.204096,27.907796,building,osm_poi,auto,2026-09-15
+preschool,33,main,,"9000, ул. ""Любчо Патронов"", № 3",43.230766,27.886835,building,osm_poi,auto,2026-09-15
+preschool,35,main,,с.Каменар,43.247031,27.902736,building,manual,human,2026-09-15
+preschool,7,main,,"9009, бул.""Вл.Варненчик""№225",43.218049,27.889302,building,manual,human,2026-09-15
+preschool,9,main,,"9000, ул.""Ангел Кънчев"" 1",43.208689,27.901201,building,osm_poi,human,2026-09-15

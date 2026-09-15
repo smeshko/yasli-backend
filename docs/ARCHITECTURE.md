@@ -48,13 +48,13 @@ The backend is the only writer to Postgres and the only reader of R2. The fronte
 | `config.py` | Env-var settings (DB URL normalisation, CORS origin parsing). |
 | `db.py` | SQLAlchemy engine, session factory, `get_db` dependency. |
 | `routes/` | One module per resource: `health`, `streets`, `addresses`, `match`, `institutions`. |
-| `models/` | ORM classes — `Institution`, `Street`, `Address`, `GraoAddress`, + `address_institutions` junction. |
+| `models/` | ORM classes — `Institution`, `InstitutionLocation`, `Street`, `Address`, `GraoAddress`, `Settlement`, + `address_institutions` junction. |
 | `snapshot_contract/` | Vendored Pydantic v2 models matching the scraper's snapshot schema. Source of truth for ingest validation. |
 | `ingest/` | CLI entrypoint, R2 client, pipeline orchestrator, house-number parser, street normaliser, district-stamping passes, match-data validation. |
 
 ### `migrations/`
 
-Alembic, currently at revision `0005`. The schema is address-centric: catchments are edges between addresses and institutions, not free-text matching.
+Alembic, currently at revision `0010`. The schema is address-centric: catchments are edges between addresses and institutions, not free-text matching.
 
 ### `docs/`
 
@@ -71,6 +71,7 @@ Alembic, currently at revision `0005`. The schema is address-centric: catchments
 | `addresses` | Physical address rows: `(street_id, number_int, number_suffix, entrance)`, stamped with `district_code` (район, 5 values) and `settlement_code` (5-digit ГРАО code; villages have settlement but no район). |
 | `address_institutions` | Junction table — street-level catchment edges (kindergartens always; preschools when the source publishes a per-PG catchment). |
 | `grao_addresses` | ГД ГРАО KADS reference rows loaded quarterly. Ground truth for `(street, number, entrance) → район`. |
+| `institution_locations` | Curated reference data, neither snapshot-derived nor ГРАО: one row per building an institution occupies (`main` or `branch`), keyed by `(kind, external_id)`, with a coordinate plus `precision`, `source` and `verification`. Loaded from the committed `data/institution_locations.csv` by its own CLI (`yasli.ingest.institution_locations_loader`), never by the weekly ingest; see `OPERATIONS.md`. |
 
 Catchments routed in three ways:
 - **Kindergartens** — `address_institutions` junction (street-level).
