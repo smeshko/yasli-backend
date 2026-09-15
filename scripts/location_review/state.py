@@ -390,3 +390,155 @@ def persist(
     write_file(csv_path, rows, provenance, provenance_path=provenance_path)
     save_candidates(candidates_path, entries, committed_hash(csv_path, provenance_path))
     return rows, provenance
+
+
+# --- review tool: transitions, validation, page state --------------------------------
+
+
+#: Plain words for each flag, for the worklist chips. Two are filled in from
+#: the entry: the settlement pair and the candidate spread.
+FLAG_TEXT: dict[str, str] = {
+    "no_candidate": "no match found",
+    "ambiguous_title": "more than one place carries this title",
+    "geocoder_only": "only the geocoder found something",
+    "outside_municipality": "a candidate lies outside Varna municipality",
+    "settlement_mismatch": "pin is in {settlement}, address says {address_settlement}",
+    "candidates_disagree": "{n} candidates {d} m apart",
+    "branch": "branch building",
+    "name_only_branch": "name-only branch: no address to search",
+    "reverse_geocode_failed": "could not tell which settlement the pin is in",
+    "address_changed": "the institution's address changed since this was decided",
+}
+
+HUMAN_STATUSES: tuple[str, ...] = ("accepted", "pinned", "no_pin", "pending")
+
+
+def reasons_for(entry: Mapping[str, Any]) -> list[str]:
+    reasons = []
+    candidates = entry.get("candidates", [])
+    for flag in entry.get("flags", []):
+        text = FLAG_TEXT.get(flag, flag)
+        if flag == "settlement_mismatch":
+            address_settlement = entry.get("address_settlement") or "?"
+            mismatch = next(
+                (
+                    c["settlement"]
+                    for c in candidates
+                    if c.get("in_municipality")
+                    and c.get("settlement")
+                    and c["settlement"].casefold() != str(address_settlement).casefold()
+                ),
+                "?",
+            )
+            text = text.format(settlement=mismatch, address_settlement=address_settlement)
+        elif flag == "candidates_disagree":
+            spread = max(
+                (c.get("distance_m") or 0 for c in candidates if c.get("source") == "nominatim"),
+                default=0,
+            )
+            text = text.format(n=len(candidates), d=spread)
+        reasons.append(text)
+    return reasons
+
+
+def apply_decision(
+    entry: Mapping[str, Any], request: Mapping[str, Any], *, today: str
+) -> dict[str, Any]:
+    """A person's decision on one entry — ``accepted`` (a candidate index),
+    ``pinned`` (a coordinate, ``building`` or ``approximate``), ``no_pin``,
+    or back to ``pending``. Returns a new entry; never mutates the input.
+    Malformed requests raise ``ValueError``; ``auto`` is not a human
+    decision and is refused."""
+    status = request.get("status")
+    if status not in HUMAN_STATUSES:
+        raise ValueError(f"unknown decision status {status!r}")
+    candidates = list(entry.get("candidates", []))
+    if status == "accepted":
+        index = request.get("candidate")
+        if index is None:
+            raise ValueError("accepted needs a candidate index")
+        if not isinstance(index, int) or isinstance(index, bool) or not 0 <= index < len(candidates):
+            raise ValueError(f"candidate index {index!r} is out of range")
+        chosen = candidates[index]
+        decision = make_decision(
+            "accepted",
+            candidate=index,
+            lat=chosen["lat"],
+            lon=chosen["lon"],
+            source=chosen["source"],
+            precision="building",
+            decided_at=today,
+        )
+    elif status == "pinned":
+        lat, lon = request.get("lat"), request.get("lon")
+        if lat is None or lon is None:
+            raise ValueError("pinned needs lat and lon")
+        precision = request.get("precision") or "building"
+        if precision not in ("building", "approximate"):
+            raise ValueError(f"precision {precision!r} must be 'building' or 'approximate'")
+        decision = make_decision(
+            "pinned",
+            lat=float(lat),
+            lon=float(lon),
+            source="manual",
+            precision=precision,
+            decided_at=today,
+        )
+    elif status == "no_pin":
+        decision = make_decision("no_pin", source="manual", precision="none", decided_at=today)
+    else:
+        decision = make_decision("pending")
+    new_entry = json.loads(json.dumps(entry))
+    new_entry["decision"] = decision
+    return new_entry
+
+
+def validate(
+    entries: Iterable[Mapping[str, Any]],
+) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]]]:
+    """Render the decided entries and run them through the loader's parser —
+    the same checks ``write_file`` applies, without writing."""
+    import csv
+    import io
+
+    from yasli.ingest.institution_locations_loader import parse_rows, render_csv
+
+    rows, provenance = render_csv_rows(entries)
+    list(parse_rows(csv.DictReader(io.StringIO(render_csv(rows))), provenance))
+    return rows, provenance
+
+
+_STATUS_ORDER = {"pending": 0, "auto": 1, "accepted": 2, "pinned": 2, "no_pin": 2}
+
+
+def counts_for(entries: Iterable[Mapping[str, Any]]) -> dict[str, int]:
+    counts = {"pending": 0, "auto": 0, "done": 0, "all": 0}
+    for entry in entries:
+        status = entry["decision"]["status"]
+        counts["all"] += 1
+        if status == "pending":
+            counts["pending"] += 1
+        elif status == "auto":
+            counts["auto"] += 1
+        else:
+            counts["done"] += 1
+    return counts
+
+
+def with_reasons(entry: Mapping[str, Any]) -> dict[str, Any]:
+    return {**entry, "reasons": reasons_for(entry)}
+
+
+def build_state(entries: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
+    """The ``GET /api/state`` payload: entries pending-first, counts per tab,
+    and the municipality outline for the map."""
+    from yasli.ingest.municipality import municipality_geojson
+
+    ordered = sorted(
+        entries, key=lambda e: (_STATUS_ORDER.get(e["decision"]["status"], 3), entry_key(e))
+    )
+    return {
+        "entries": [with_reasons(e) for e in ordered],
+        "counts": counts_for(ordered),
+        "municipality": municipality_geojson(),
+    }
