@@ -518,7 +518,7 @@ def plan_refresh(
         if inst is None:
             log.warning("dropping %s: institution no longer exists", key)
             continue
-        current = inst.get("address") or ""
+        current = (inst.get("address") or "").strip()  # the parser strips; keys must too
         if role == "main" and normalise_address(address) != normalise_address(current):
             new_key: state.Key = (kind, external_id, "main", "", current)
             if new_key in kept:
@@ -612,8 +612,10 @@ def fetch_free_places() -> dict[str, Any]:
 
 
 def read_institutions(session: Session) -> dict[tuple[str, str], dict[str, Any]]:
+    """Names and addresses, stripped: the snapshot contract does not strip,
+    the loader's parser does, and a key must survive that round trip."""
     return {
-        (kind, external_id): {"name": name, "address": address}
+        (kind, external_id): {"name": name.strip(), "address": address.strip() if address else address}
         for kind, external_id, name, address in session.execute(
             select(
                 Institution.kind, Institution.external_id, Institution.name, Institution.address
@@ -750,7 +752,7 @@ def main(argv: list[str] | None = None) -> int:
     to_gather, kept = plan_refresh(existing, institutions)
 
     for (kind, external_id), inst in sorted(institutions.items()):
-        address = inst["address"] or ""
+        address = (inst["address"] or "").strip()
         key: state.Key = (kind, external_id, "main", "", address)
         if key not in to_gather and not any(state.entry_key(e) == key for e in kept):
             to_gather[key] = {

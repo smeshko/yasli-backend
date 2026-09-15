@@ -884,3 +884,26 @@ def test_cli_allow_incomplete_and_dry_run_flags(
     assert "dry_run=1" in captured.out
     with Session(sqlite_engine) as s:
         assert _business_rows(s) == []
+
+
+def test_render_csv_strips_string_cells_so_a_row_survives_the_round_trip() -> None:
+    """The parser strips label and address; the renderer must too, or a
+    trailing space in institutions.address becomes a second building."""
+    import csv
+    import io
+    from datetime import date
+    from decimal import Decimal
+
+    from yasli.ingest.institution_locations_loader import parse_rows, render_csv
+
+    row = {
+        "kind": "kindergarten", "external_id": "46", "role": "branch", "label": " Жирафче ",
+        "address": "ул. Батак 6 ", "lat": Decimal("43.209600"), "lon": Decimal("27.927000"),
+        "precision": "building", "source": "manual", "verification": "human",
+        "verified_at": date(2026, 9, 15),
+    }
+    text = render_csv([row])
+    assert ",Жирафче,ул. Батак 6," in text
+    (parsed,) = parse_rows(csv.DictReader(io.StringIO(text)), {})
+    assert (parsed["label"], parsed["address"]) == ("Жирафче", "ул. Батак 6")
+    assert render_csv([parsed]) == text

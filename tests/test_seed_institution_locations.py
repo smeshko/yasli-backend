@@ -617,6 +617,19 @@ def test_plan_refresh_flags_address_changed_whichever_entry_is_visited_first() -
         assert [e["decision"]["status"] for e in kept_entries] == ["pinned"]
 
 
+def test_plan_refresh_strips_the_institution_address_before_keying() -> None:
+    """The snapshot contract does not strip and the loader's parser does, so
+    a trailing space in institutions.address must never reach a key — it
+    would parse back as a different building."""
+    institutions = {
+        ("kindergarten", "46"): {"name": 'ДГ№13 "Мир"', "address": ' ул. "Тодор Икономов" №26 '},
+    }
+    existing = {state.entry_key(_entry("accepted", candidate=0)): _entry("accepted", candidate=0)}
+    to_gather, _kept = seed.plan_refresh(existing, institutions)
+    ((key, _seeded),) = to_gather.items()
+    assert key[4] == 'ул. "Тодор Икономов" №26'
+
+
 def test_plan_refresh_quote_style_change_is_not_a_move() -> None:
     institutions = {
         ("kindergarten", "46"): {"name": 'ДГ№13 "Мир"',
