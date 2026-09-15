@@ -26,7 +26,11 @@ provenance rename. With no candidates file at all the tool refuses to start
 and points at the seed script.
 
 Never imported by ``src/yasli``; never deployed. The page loads the map
-library and tiles from the network; nothing in it calls a geocoder.
+library and tiles from the network; nothing in it calls a geocoder. The
+server still treats the browser as untrusted on behalf of other sites: a
+foreign ``Host`` or ``Origin``, or a POST body that is not
+``application/json``, is refused before it is read (see
+``ReviewHandler._refuse_foreign``).
 """
 
 from __future__ import annotations
@@ -157,7 +161,47 @@ class ReviewHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _refuse_foreign(self) -> bool:
+        """Turn away requests that another site could have made the browser
+        send, before any body is read. Returns True when a refusal went out.
+
+        The server binds loopback, but a browser is a confused deputy: any
+        page in another tab can POST here. Three doors are closed. A
+        ``Host`` that is not this server (DNS rebinding) is refused on every
+        method. On a POST, a body that is not ``application/json`` is
+        refused — ``text/plain`` is a CORS "simple request" that skips the
+        preflight, and this server answers no preflight, so requiring JSON
+        makes every cross-origin fetch fail in the browser — and so is an
+        ``Origin`` naming another site (or ``null``); clients that send no
+        ``Origin`` at all (curl, the tests) are not browsers acting for a
+        page and pass.
+        """
+        port = self.server.server_address[1]
+        host = (self.headers.get("Host") or "").lower()
+        if host not in {f"127.0.0.1:{port}", f"localhost:{port}"}:
+            self._send_json(HTTPStatus.FORBIDDEN, {"error": f"unexpected Host {host!r}"})
+            return True
+        if self.command != "POST":
+            return False
+        content_type = (self.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+        if content_type != "application/json":
+            self._send_json(
+                HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
+                {"error": f"Content-Type must be application/json, not {content_type!r}"},
+            )
+            return True
+        origin = self.headers.get("Origin")
+        if origin is not None and origin.lower() not in {
+            f"http://127.0.0.1:{port}",
+            f"http://localhost:{port}",
+        }:
+            self._send_json(HTTPStatus.FORBIDDEN, {"error": f"cross-site request from {origin!r}"})
+            return True
+        return False
+
     def do_GET(self) -> None:  # noqa: N802 - stdlib name
+        if self._refuse_foreign():
+            return
         if self.path == "/":
             body = INDEX_HTML.read_bytes()
             self.send_response(HTTPStatus.OK)
@@ -180,6 +224,8 @@ class ReviewHandler(BaseHTTPRequestHandler):
         return body
 
     def do_POST(self) -> None:  # noqa: N802 - stdlib name
+        if self._refuse_foreign():
+            return
         review = self.server.review
         try:
             body = self._read_body()

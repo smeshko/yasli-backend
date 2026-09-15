@@ -295,6 +295,43 @@ def test_unknown_key_and_malformed_body_are_4xx(server) -> None:
     assert "candidate" in payload["error"]
 
 
+def _raw(srv, path: str, headers: dict[str, str], body: bytes | None = b"{}", method="POST"):
+    request = urllib.request.Request(_url(srv, path), data=body, method=method, headers=headers)
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            return response.status
+    except urllib.error.HTTPError as exc:
+        return exc.code
+
+
+def test_cross_site_requests_are_refused_before_anything_is_written(server, paths) -> None:
+    """Another site's page can make the browser POST here three ways: a
+    text/plain body (a CORS simple request, no preflight), a JSON body that
+    carries its own Origin, or DNS rebinding (a foreign Host). Each is
+    turned away; only a same-origin JSON POST, or a client that is not a
+    browser acting for a page, gets through."""
+    before = _snapshot(paths)
+    body = json.dumps({"key": _key(), "status": "no_pin"}).encode()
+    own = _url(server, "")
+    port = server.server_address[1]
+    assert _raw(server, "/api/decision", {"Content-Type": "text/plain"}, body) == 415
+    assert _raw(server, "/api/undo", {"Content-Type": "text/plain"}, b"") == 415
+    assert _raw(server, "/api/decision", {"Content-Type": "application/json",
+                                          "Origin": "https://evil.example"}, body) == 403
+    assert _raw(server, "/api/decision", {"Content-Type": "application/json",
+                                          "Origin": "null"}, body) == 403
+    assert _raw(server, "/api/decision", {"Content-Type": "application/json",
+                                          "Host": f"evil.example:{port}"}, body) == 403
+    assert _raw(server, "/api/state", {"Host": f"evil.example:{port}"}, None, "GET") == 403
+    assert _snapshot(paths) == before
+    # The page's own fetch: same-origin, JSON — and lands.
+    assert _raw(server, "/api/decision", {"Content-Type": "application/json; charset=utf-8",
+                                          "Origin": own}, body) == 200
+    assert _raw(server, "/api/state", {"Host": f"localhost:{port}"}, None, "GET") == 200
+    rows = {r["address"]: r for r in parse_file(paths["csv"], provenance_path=paths["provenance"])}
+    assert rows['ул. "Никола Михайловски" №6']["precision"] == "none"
+
+
 def test_undo_reverts_all_three_files_to_their_original_bytes(server, paths) -> None:
     before = _snapshot(paths)
     status, _ = _post(server, "/api/decision", {"key": _key(), "status": "no_pin"})
