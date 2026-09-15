@@ -39,23 +39,62 @@ an opaque error instead of a line number:
 The municipality polygon (``yasli.ingest.municipality``) is the hard
 reject for every coordinate. It is one guard among several — see that
 module's docstring for what it cannot catch.
+
+Loading (``python -m yasli.ingest.institution_locations_loader [path]``)
+mirrors ``grao_loader``: TRUNCATE + bulk INSERT inside one transaction, so
+re-running against the same file leaves the table in the same observable
+state (every column except the surrogate ``id``, which plain ``TRUNCATE``
+does not reset). Three referential guards run **before** the TRUNCATE, all
+resolved against ``institutions`` in one query, so a bad file fails as a
+data problem with names, not as a constraint error after the table was
+emptied:
+
+1. every ``(kind, external_id)`` in the file must match an institution —
+   never skippable;
+2. every current institution must have a ``main`` row (an explicit
+   ``no_pin`` row with ``precision=none`` counts as present) — a
+   half-finished review or a CSV predating a newly ingested institution
+   never replaces a complete table;
+3. a ``main`` row's ``address`` must still match the institution's, through
+   :func:`normalise_address` — ingest overwrites ``institutions.address``,
+   so a moved institution with its old pin is exactly the wrong pin that
+   looks right.
+
+``--allow-incomplete`` ("the CSV lags the institutions table") skips guards
+2 and 3 for local partial loads only, never guard 1; ``--dry-run`` runs all
+three and prints the summary without touching the table.
+
+The weekly ``python -m yasli.ingest`` must not call this: coordinates change
+roughly never, and coupling a reference load to the cron would let a
+third-party outage during the seed script's data collection break routing
+refreshes.
 """
 
 from __future__ import annotations
 
+import argparse
 import csv
 import io
 import json
 import os
 import re
+import sys
 import tempfile
+from collections import Counter
 from collections.abc import Iterable, Iterator, Mapping
+from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 
+from sqlalchemy import delete, insert, select, text
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session
+
+from yasli.db import get_engine
 from yasli.ingest.municipality import REPO_ROOT, in_varna_municipality
+from yasli.models import Institution, InstitutionLocation
 from yasli.models.types import (
     KIND_VALUES,
     PRECISION_VALUES,
@@ -408,3 +447,246 @@ def write_file(
     _atomic_write(path, csv_text)
     _atomic_write(provenance_path, render_provenance(provenance))
     return parsed
+
+
+# --- loading -------------------------------------------------------------------
+
+
+class UnmatchedInstitution(Exception):
+    """A row's ``(kind, external_id)`` matches no institution. Never skippable."""
+
+    def __init__(self, pairs: list[tuple[str, str]]) -> None:
+        self.pairs = pairs
+        names = ", ".join(provenance_key(kind, external_id) for kind, external_id in pairs)
+        super().__init__(f"{len(pairs)} row(s) match no institution: {names}")
+
+
+class IncompleteFile(Exception):
+    """The file lags the institutions table: an institution has no ``main``
+    row, or a ``main`` row's address drifted. Skippable with
+    ``--allow-incomplete`` for local loads."""
+
+    def __init__(
+        self, missing_main: list[str], address_drift: list[tuple[str, str, str]]
+    ) -> None:
+        self.missing_main = missing_main
+        self.address_drift = address_drift
+        parts = []
+        if missing_main:
+            parts.append(
+                f"{len(missing_main)} institution(s) have no main row: " + "; ".join(missing_main)
+            )
+        if address_drift:
+            parts.append(
+                f"{len(address_drift)} main row(s) no longer match the institution's address: "
+                + "; ".join(
+                    f"{name}: csv={csv_address!r} db={db_address!r}"
+                    for name, csv_address, db_address in address_drift
+                )
+            )
+        super().__init__(" | ".join(parts))
+
+
+@dataclass
+class LoaderSummary:
+    """What one loader run found and did."""
+
+    rows_loaded: int = 0
+    by_role: dict[str, int] = field(default_factory=dict)
+    by_verification: dict[str, int] = field(default_factory=dict)
+    #: Institutions with no ``main`` row, as ``name (kind/external_id)``.
+    #: Non-empty only under ``allow_incomplete``.
+    missing_main: list[str] = field(default_factory=list)
+    #: ``(institution, csv address, db address)`` for drifted ``main`` rows.
+    #: Non-empty only under ``allow_incomplete``.
+    address_drift: list[tuple[str, str, str]] = field(default_factory=list)
+    #: ``main`` rows shipped without a pin (``precision=none``), by name.
+    unresolved_main: list[str] = field(default_factory=list)
+    dry_run: bool = False
+
+
+def _label(name: str, kind: str, external_id: str) -> str:
+    return f"{name} ({provenance_key(kind, external_id)})"
+
+
+def load_rows(
+    rows: list[dict[str, Any]],
+    session: Session,
+    *,
+    allow_incomplete: bool = False,
+    dry_run: bool = False,
+) -> LoaderSummary:
+    """Run the three guards, then (unless ``dry_run``) TRUNCATE + INSERT.
+
+    The whole operation runs inside the caller's transaction; on any error,
+    rolling back leaves the previous contents intact. The guards run before
+    the TRUNCATE so a rejected file never empties the table even
+    transiently.
+    """
+    institutions = {
+        (kind, external_id): (name, address)
+        for kind, external_id, name, address in session.execute(
+            select(
+                Institution.kind,
+                Institution.external_id,
+                Institution.name,
+                Institution.address,
+            )
+        )
+    }
+
+    # Guard 1: locations without an institution.
+    unmatched = sorted(
+        {(r["kind"], r["external_id"]) for r in rows} - set(institutions)
+    )
+    if unmatched:
+        raise UnmatchedInstitution(unmatched)
+
+    # Guard 2: institutions without a location.
+    main_rows = {(r["kind"], r["external_id"]): r for r in rows if r["role"] == "main"}
+    missing_main = [
+        _label(name, kind, external_id)
+        for (kind, external_id), (name, _address) in sorted(institutions.items())
+        if (kind, external_id) not in main_rows
+    ]
+
+    # Guard 3: a location whose institution moved.
+    address_drift: list[tuple[str, str, str]] = []
+    for (kind, external_id), row in sorted(main_rows.items()):
+        name, db_address = institutions[(kind, external_id)]
+        if db_address is None:
+            continue
+        if normalise_address(row["address"]) != normalise_address(db_address):
+            address_drift.append((_label(name, kind, external_id), row["address"], db_address))
+
+    if (missing_main or address_drift) and not allow_incomplete:
+        raise IncompleteFile(missing_main, address_drift)
+
+    if not dry_run:
+        if session.bind is not None and session.bind.dialect.name == "postgresql":
+            session.execute(text("TRUNCATE TABLE institution_locations"))
+        else:
+            session.execute(delete(InstitutionLocation))
+        if rows:
+            session.execute(insert(InstitutionLocation), rows)
+
+    unresolved_main = [
+        _label(institutions[(kind, external_id)][0], kind, external_id)
+        for (kind, external_id), row in sorted(main_rows.items())
+        if row["precision"] == "none"
+    ]
+    return LoaderSummary(
+        rows_loaded=len(rows),
+        by_role=dict(Counter(r["role"] for r in rows)),
+        by_verification=dict(Counter(r["verification"] for r in rows)),
+        missing_main=missing_main,
+        address_drift=address_drift,
+        unresolved_main=unresolved_main,
+        dry_run=dry_run,
+    )
+
+
+def load(
+    path: Path,
+    session: Session,
+    *,
+    allow_incomplete: bool = False,
+    dry_run: bool = False,
+    provenance_path: Path | None = None,
+) -> LoaderSummary:
+    """Parse ``path`` (raising :class:`LocationRowError` with its line
+    number) and load it — see :func:`load_rows`."""
+    rows = list(parse_file(path, provenance_path=provenance_path))
+    return load_rows(rows, session, allow_incomplete=allow_incomplete, dry_run=dry_run)
+
+
+def format_summary(summary: LoaderSummary) -> str:
+    """The operator-readable report: one summary line, then one line per
+    named item so an unresolved or missing ``main`` row is never hidden
+    behind a count."""
+    lines = [
+        "institution_locations_loader done "
+        f"rows={summary.rows_loaded} "
+        f"main={summary.by_role.get('main', 0)} "
+        f"branch={summary.by_role.get('branch', 0)} "
+        f"auto={summary.by_verification.get('auto', 0)} "
+        f"human={summary.by_verification.get('human', 0)} "
+        f"missing_main={len(summary.missing_main)} "
+        f"address_drift={len(summary.address_drift)} "
+        f"unresolved_main={len(summary.unresolved_main)} "
+        f"dry_run={int(summary.dry_run)}"
+    ]
+    lines.extend(f"  unresolved main (no pin): {name}" for name in summary.unresolved_main)
+    lines.extend(f"  missing main: {name}" for name in summary.missing_main)
+    lines.extend(
+        f"  address drift: {name}: csv={csv_address!r} db={db_address!r}"
+        for name, csv_address, db_address in summary.address_drift
+    )
+    return "\n".join(lines)
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        prog="yasli.ingest.institution_locations_loader",
+        description=(
+            "Load data/institution_locations.csv into institution_locations. "
+            "Idempotent: TRUNCATE + INSERT inside one transaction, after checking "
+            "every row against the institutions table."
+        ),
+    )
+    parser.add_argument(
+        "path",
+        type=Path,
+        nargs="?",
+        default=DEFAULT_CSV,
+        help=f"Path to the locations CSV (default: {DEFAULT_CSV}).",
+    )
+    parser.add_argument(
+        "--allow-incomplete",
+        action="store_true",
+        help=(
+            "Load even when an institution has no main row or a main row's "
+            "address drifted (the CSV lags the institutions table). Local loads "
+            "only; never against production."
+        ),
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Run every check and print the summary without TRUNCATE or INSERT.",
+    )
+    args = parser.parse_args(argv)
+    if not args.path.exists():
+        print(f"error: file not found: {args.path}", file=sys.stderr)
+        return 2
+    try:
+        rows = list(parse_file(args.path))
+    except LocationRowError as exc:
+        print(f"error: {args.path}: {exc}", file=sys.stderr)
+        return 3
+    try:
+        engine = get_engine()
+        with Session(engine) as session, session.begin():
+            summary = load_rows(
+                rows, session, allow_incomplete=args.allow_incomplete, dry_run=args.dry_run
+            )
+    except UnmatchedInstitution as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 4
+    except IncompleteFile as exc:
+        print(
+            f"error: {exc}\n"
+            "The table was not touched. Refresh the file (seed script -> review tool), "
+            "or pass --allow-incomplete for a local partial load.",
+            file=sys.stderr,
+        )
+        return 4
+    except SQLAlchemyError as exc:
+        print(f"error: database error: {exc}", file=sys.stderr)
+        return 5
+    print(format_summary(summary), flush=True)
+    return 0
+
+
+if __name__ == "__main__":  # pragma: no cover - delegated to tests via main()
+    raise SystemExit(main())
