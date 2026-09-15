@@ -332,6 +332,29 @@ def test_cross_site_requests_are_refused_before_anything_is_written(server, path
     assert rows['ул. "Никола Михайловски" №6']["precision"] == "none"
 
 
+@pytest.mark.parametrize("value", ["inf", "nan", "1e999", True, "x"])
+def test_apply_decision_refuses_a_non_finite_pin(value) -> None:
+    with pytest.raises(ValueError, match="is not a"):
+        state.apply_decision(_main_entry(), {"status": "pinned", "lat": value, "lon": 27.92},
+                             today=TODAY)
+
+
+def test_non_finite_coordinates_are_a_400_and_nothing_is_written(server, paths) -> None:
+    """json.loads accepts Infinity and NaN, and float() accepts 'inf': each
+    used to reach the renderer and come back as a 500 that claimed the
+    decision was saved to the candidates file. It never was."""
+    before = _snapshot(paths)
+    for lat in ("inf", "nan", "1e999", True):
+        status, payload = _post(server, "/api/decision",
+                                {"key": _key(), "status": "pinned", "lat": lat, "lon": 27.92})
+        assert (status, "is not a" in payload["error"]) == (400, True), (lat, payload)
+    body = b'{"key": %s, "status": "pinned", "lat": Infinity, "lon": 27.92}' % json.dumps(_key()).encode()
+    assert _raw(server, "/api/decision", {"Content-Type": "application/json"}, body) == 400
+    body = b'{"key": %s, "status": "pinned", "lat": NaN, "lon": 27.92}' % json.dumps(_key()).encode()
+    assert _raw(server, "/api/decision", {"Content-Type": "application/json"}, body) == 400
+    assert _snapshot(paths) == before
+
+
 def test_undo_reverts_all_three_files_to_their_original_bytes(server, paths) -> None:
     before = _snapshot(paths)
     status, _ = _post(server, "/api/decision", {"key": _key(), "status": "no_pin"})
