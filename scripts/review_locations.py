@@ -65,6 +65,12 @@ class NoCandidatesFile(RuntimeError):
     """The review tool needs the seed script's output to exist."""
 
 
+class PersistFailed(RuntimeError):
+    """A decision passed validation and was applied, but writing it out
+    failed part-way: the candidates file may carry it while the CSV and
+    provenance file do not. The next start regenerates them."""
+
+
 class ReviewState:
     """The entries under review, their files, and this session's undo stack."""
 
@@ -126,7 +132,10 @@ class ReviewState:
         state.validate(trial.values())  # LocationRowError → nothing written
         self.entries[key] = new_entry
         self.undo_stack.append((key, previous))
-        self.persist()
+        try:
+            self.persist()
+        except Exception as exc:
+            raise PersistFailed(str(exc)) from exc
         return new_entry
 
     def undo(self) -> dict[str, Any]:
@@ -145,6 +154,12 @@ class ReviewServer(ThreadingHTTPServer):
     def __init__(self, address: tuple[str, int], review: ReviewState) -> None:
         self.review = review
         super().__init__(address, ReviewHandler)
+
+
+def _reject_constant(name: str) -> Any:
+    """``json.loads`` accepts ``NaN`` and ``Infinity`` by default; a
+    coordinate cannot be either, so they are a malformed body."""
+    raise ValueError(f"{name} is not valid JSON")
 
 
 class ReviewHandler(BaseHTTPRequestHandler):
@@ -218,7 +233,7 @@ class ReviewHandler(BaseHTTPRequestHandler):
     def _read_body(self) -> dict[str, Any]:
         length = int(self.headers.get("Content-Length") or 0)
         raw = self.rfile.read(length) if length else b"{}"
-        body = json.loads(raw.decode("utf-8") or "{}")
+        body = json.loads(raw.decode("utf-8") or "{}", parse_constant=_reject_constant)
         if not isinstance(body, dict):
             raise ValueError("body must be a JSON object")
         return body
@@ -251,11 +266,18 @@ class ReviewHandler(BaseHTTPRequestHandler):
                 except ValueError as exc:
                     self._send_json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
                     return
-                except Exception as exc:  # the decision is in the candidates file already;
-                    log.exception("persist failed")  # the derived files regenerate on next start
+                except PersistFailed as exc:  # the derived files regenerate on next start
+                    log.exception("persist failed")
                     self._send_json(
                         HTTPStatus.INTERNAL_SERVER_ERROR,
                         {"error": f"saved to the candidates file, but regenerating the CSV failed: {exc}"},
+                    )
+                    return
+                except Exception as exc:  # before anything was written
+                    log.exception("decision failed")
+                    self._send_json(
+                        HTTPStatus.INTERNAL_SERVER_ERROR,
+                        {"error": f"internal error, nothing was written: {exc}"},
                     )
                     return
                 self._send_json(

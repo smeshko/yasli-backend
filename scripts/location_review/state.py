@@ -499,6 +499,21 @@ def reasons_for(entry: Mapping[str, Any]) -> list[str]:
     return reasons
 
 
+def _finite(value: Any, field: str) -> float:
+    """A real, finite coordinate. Bools, NaN and ±inf are refused here, as a
+    malformed request, so they never reach the renderer — which cannot
+    quantise them and would fail as an internal error instead."""
+    if isinstance(value, bool):
+        raise ValueError(f"{field} {value!r} is not a number")
+    try:
+        number = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{field} {value!r} is not a number") from exc
+    if not math.isfinite(number):
+        raise ValueError(f"{field} {value!r} is not a finite number")
+    return number
+
+
 def apply_decision(
     entry: Mapping[str, Any], request: Mapping[str, Any], *, today: str
 ) -> dict[str, Any]:
@@ -531,13 +546,14 @@ def apply_decision(
         lat, lon = request.get("lat"), request.get("lon")
         if lat is None or lon is None:
             raise ValueError("pinned needs lat and lon")
+        lat, lon = _finite(lat, "lat"), _finite(lon, "lon")
         precision = request.get("precision") or "building"
         if precision not in ("building", "approximate"):
             raise ValueError(f"precision {precision!r} must be 'building' or 'approximate'")
         decision = make_decision(
             "pinned",
-            lat=float(lat),
-            lon=float(lon),
+            lat=lat,
+            lon=lon,
             source="manual",
             precision=precision,
             decided_at=today,
