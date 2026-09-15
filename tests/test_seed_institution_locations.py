@@ -124,6 +124,24 @@ def test_poi_candidates_title_match_within_family(kind, name, expected_names) ->
     assert all(c["source"] == "osm_poi" for c in found)
 
 
+@pytest.mark.parametrize(
+    ("parent", "label", "expected_names"),
+    [
+        ('ДГ№4 "Теменужка"', "", ['ДГ-4 "Теменужка" Филиал 1']),
+        ('ДГ№17 "Петър Берон"', "Жирафче", ['Детска градина "Жирафче"']),
+        ('ДГ№17 "Петър Берон"', "Другарче", []),
+        ('ДГ№13 "Мир"', "", []),
+        ('ДГ№7 "А.С.Пушкин"', "", []),  # "ЦДГ Пушкин (филиал)" carries a different title
+    ],
+)
+def test_poi_candidates_for_branch_by_label_or_parent_title_with_филиал(parent, label, expected_names) -> None:
+    pois = seed.parse_pois(OVERPASS)
+    found = seed.poi_candidates_for_branch("kindergarten", parent, label, pois)
+    assert sorted(c["osm_name"] for c in found) == sorted(expected_names)
+    # The parent's own building is never a branch candidate.
+    assert "Теменужка" not in [c["osm_name"] for c in found]
+
+
 def test_title_owner_counts_flag_titles_shared_between_institutions() -> None:
     institutions = [
         ("kindergarten", "81", 'ДГ№48 "Ран Босилек"'),
