@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Institution locations review</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+  :root { --ink: #1f2933; --muted: #6b7280; --line: #e5e7eb; --accent: #2563eb; --ok: #15803d; --bad: #b91c1c; --bg: #f8fafc; }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; font: 14px/1.4 -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; color: var(--ink); background: var(--bg); }
+  body { display: grid; grid-template-columns: 400px 1fr; grid-template-rows: 100vh; }
+  aside { border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; background: #fff; }
+  .tabs { display: flex; gap: 4px; padding: 10px 10px 0; border-bottom: 1px solid var(--line); }
+  .tabs button { border: 0; background: none; padding: 8px 10px; cursor: pointer; color: var(--muted); border-bottom: 2px solid transparent; }
+  .tabs button.active { color: var(--ink); border-bottom-color: var(--accent); font-weight: 600; }
+  .progress { height: 6px; background: var(--line); }
+  .progress > div { height: 100%; background: var(--ok); width: 0; transition: width .2s; }
+  .progress-label { padding: 6px 12px; color: var(--muted); font-size: 12px; }
+  ul.worklist { list-style: none; margin: 0; padding: 0; overflow: auto; flex: 1; }
+  ul.worklist li { padding: 10px 12px; border-bottom: 1px solid var(--line); cursor: pointer; }
+  ul.worklist li.selected { background: #eff6ff; box-shadow: inset 3px 0 0 var(--accent); }
+  .name { font-weight: 600; }
+  .badge { display: inline-block; font-size: 11px; padding: 1px 6px; border-radius: 10px; background: #e0e7ff; color: #3730a3; margin-left: 6px; vertical-align: middle; }
+  .badge.branch { background: #fef3c7; color: #92400e; }
+  .chips { margin-top: 4px; }
+  .chip { display: inline-block; font-size: 11px; padding: 1px 6px; border-radius: 4px; background: #fee2e2; color: var(--bad); margin: 2px 4px 0 0; }
+  .chip.auto { background: #dcfce7; color: var(--ok); }
+  .chip.done { background: #dbeafe; color: #1d4ed8; }
+  main { display: flex; flex-direction: column; min-height: 0; }
+  .detail { padding: 12px 16px; border-bottom: 1px solid var(--line); background: #fff; }
+  .address { font-size: 22px; font-weight: 600; margin: 0 0 4px; }
+  .meta { color: var(--muted); }
+  .candidates { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
+  .candidate { border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; min-width: 200px; }
+  .candidate .n { display: inline-block; width: 20px; height: 20px; line-height: 20px; text-align: center; border-radius: 50%; color: #fff; font-weight: 700; margin-right: 6px; }
+  .candidate.poi .n { background: var(--accent); }
+  .candidate.geo .n { background: #ea580c; }
+  .candidate.outside { opacity: .55; }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; }
+  .actions button { border: 1px solid var(--line); background: #fff; border-radius: 6px; padding: 6px 10px; cursor: pointer; }
+  .actions button:hover { border-color: var(--accent); }
+  kbd { font: 11px ui-monospace, Menlo, monospace; background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 3px; padding: 0 4px; margin-right: 4px; }
+  .status { margin-left: auto; font-weight: 600; }
+  .status.ok { color: var(--ok); }
+  .status.err { color: var(--bad); }
+  #map { flex: 1; min-height: 0; }
+  a { color: var(--accent); }
+  .num-icon { background: transparent; border: 0; }
+  .num-icon span { display: block; width: 22px; height: 22px; line-height: 22px; border-radius: 50%; text-align: center; color: #fff; font-weight: 700; border: 2px solid #fff; box-shadow: 0 1px 3px rgba(0,0,0,.4); }
+  .num-icon.poi span { background: var(--accent); }
+  .num-icon.geo span { background: #ea580c; }
+  .num-icon.outside span { opacity: .55; }
+</style>
+</head>
+<body>
+<aside>
+  <div class="tabs" id="tabs"></div>
+  <div class="progress"><div id="bar"></div></div>
+  <div class="progress-label" id="progress"></div>
+  <ul class="worklist" id="worklist"></ul>
+</aside>
+<main>
+  <div class="detail" id="detail"><p class="meta">Loading…</p></div>
+  <div id="map"></div>
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+(function () {
+  'use strict';
+  const FILTERS = [['pending', 'To review'], ['auto', 'Auto-accepted'], ['done', 'Done'], ['all', 'All']];
+  const isDone = s => s === 'accepted' || s === 'pinned' || s === 'no_pin';
+  let data = { entries: [], counts: {}, municipality: null };
+  let filter = 'pending';
+  let selected = null;          // entry
+  let pin = null;               // {lat, lon} placed by hand
+  let pinPrecision = 'building';
+  let status = { text: '', ok: true };
+
+  const map = L.map('map', { zoomControl: true }).setView([43.21, 27.91], 12);
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19, attribution: '&copy; OpenStreetMap contributors'
+  }).addTo(map);
+  let outline = null;
+  const markers = L.layerGroup().addTo(map);
+  let pinMarker = null;
+
+  const keyOf = e => JSON.stringify([e.key.kind, e.key.external_id, e.key.role, e.key.label, e.key.address]);
+  const sameKey = (a, b) => keyOf(a) === keyOf(b);
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const fmt = (lat, lon) => Number(lat).toFixed(6) + ', ' + Number(lon).toFixed(6);
+  const metres = (a, b) => {
+    const R = 6371000, toRad = x => x * Math.PI / 180;
+    const dLat = toRad(b.lat - a.lat), dLon = toRad(b.lon - a.lon);
+    const s = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLon / 2) ** 2;
+    return Math.round(2 * R * Math.asin(Math.sqrt(s)));
+  };
+
+  function visible() {
+    return data.entries.filter(e => {
+      const s = e.decision.status;
+      return filter === 'all' || (filter === 'pending' && s === 'pending') ||
+        (filter === 'auto' && s === 'auto') || (filter === 'done' && isDone(s));
+    });
+  }
+
+  function setStatus(text, ok) { status = { text, ok }; renderDetail(); }
+
+  async function load() {
+    const r = await fetch('/api/state');
+    data = await r.json();
+    if (data.municipality && !outline) {
+      outline = L.geoJSON(data.municipality, { style: { color: '#334155', weight: 2, fill: false, dashArray: '6 4' } }).addTo(map);
+      map.fitBounds(outline.getBounds());
+    }
+    if (selected) selected = data.entries.find(e => sameKey(e, selected)) || null;
+    if (!selected) { const first = visible()[0]; if (first) select(first, false); }
+    render();
+  }
+
+  function render() { renderTabs(); renderList(); renderDetail(); }
+
+  function renderTabs() {
+    const c = data.counts;
+    document.getElementById('tabs').innerHTML = FILTERS.map(([id, label]) =>
+      `<button data-f="${id}" class="${id === filter ? 'active' : ''}">${label} (${c[id] ?? 0})</button>`).join('');
+    document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => { filter = b.dataset.f; selected = null; const f = visible()[0]; if (f) select(f, false); render(); });
+    const flagged = (c.pending || 0) + (c.done || 0);
+    const pct = flagged ? Math.round(100 * (c.done || 0) / flagged) : 0;
+    document.getElementById('bar').style.width = pct + '%';
+    document.getElementById('progress').textContent = `${c.done || 0} of ${flagged} flagged rows reviewed`;
+  }
+
+  function renderList() {
+    const items = visible();
+    document.getElementById('worklist').innerHTML = items.map(e => {
+      const s = e.decision.status;
+      const role = e.key.role === 'main' ? '<span class="badge">main</span>' : `<span class="badge branch">${esc(e.key.label || 'branch')}</span>`;
+      const chips = s === 'auto' ? '<span class="chip auto">auto-accepted</span>' :
+        isDone(s) ? `<span class="chip done">${s.replace('_', ' ')}</span>` :
+        e.reasons.map(r => `<span class="chip">${esc(r)}</span>`).join('');
+      return `<li data-k="${esc(keyOf(e))}" class="${selected && sameKey(e, selected) ? 'selected' : ''}">
+        <div class="name">${esc(e.name)}${role}</div>
+        <div class="meta">${esc(e.key.address || '(no address)')}</div>
+        <div class="chips">${chips}</div></li>`;
+    }).join('') || '<li class="meta">Nothing here.</li>';
+    document.querySelectorAll('#worklist li[data-k]').forEach(li => li.onclick = () => {
+      const e = data.entries.find(x => keyOf(x) === li.dataset.k); if (e) select(e, true);
+    });
+    const sel = document.querySelector('#worklist li.selected');
+    if (sel) sel.scrollIntoView({ block: 'nearest' });
+  }
+
+  function candidateIcon(i, c) {
+    const cls = 'num-icon ' + (c.source === 'osm_poi' ? 'poi' : 'geo') + (c.in_municipality ? '' : ' outside');
+    return L.divIcon({ className: cls, html: `<span>${i + 1}</span>`, iconSize: [22, 22], iconAnchor: [11, 11] });
+  }
+
+  function select(e, rerender) {
+    selected = e; pin = null; pinPrecision = 'building'; status = { text: '', ok: true };
+    const d = e.decision;
+    if (d.status === 'pinned' && d.lat != null) { pin = { lat: d.lat, lon: d.lon }; pinPrecision = d.precision || 'building'; }
+    markers.clearLayers(); if (pinMarker) { map.removeLayer(pinMarker); pinMarker = null; }
+    const pts = [];
+    e.candidates.forEach((c, i) => {
+      const m = L.marker([c.lat, c.lon], { icon: candidateIcon(i, c), title: c.osm_name || c.source });
+      m.on('click', () => accept(i));
+      markers.addLayer(m); pts.push([c.lat, c.lon]);
+    });
+    const current = d.lat != null ? { lat: d.lat, lon: d.lon } : null;
+    if (pin || current) drawPin(pin || current, d.status === 'pinned' || d.status === 'pending');
+    if (current) pts.push([current.lat, current.lon]);
+    if (pts.length) map.fitBounds(L.latLngBounds(pts).pad(0.4), { maxZoom: 17 });
+    else if (outline) map.fitBounds(outline.getBounds());
+    if (rerender !== false) render();
+  }
+
+  function drawPin(p, draggable) {
+    if (pinMarker) map.removeLayer(pinMarker);
+    pinMarker = L.circleMarker([p.lat, p.lon], { radius: 9, color: '#fff', weight: 2, fillColor: '#15803d', fillOpacity: 0.95 }).addTo(map);
+    if (draggable) {
+      const drag = L.marker([p.lat, p.lon], { draggable: true, opacity: 0.01 }).addTo(map);
+      drag.on('dragend', ev => { const ll = ev.target.getLatLng(); pin = { lat: ll.lat, lon: ll.lng }; drawPin(pin, true); renderDetail(); });
+      markers.addLayer(drag);
+    }
+  }
+
+  map.on('click', ev => {
+    if (!selected) return;
+    pin = { lat: ev.latlng.lat, lon: ev.latlng.lng };
+    drawPin(pin, true); renderDetail();
+  });
+
+  function renderDetail() {
+    const box = document.getElementById('detail');
+    if (!selected) { box.innerHTML = '<p class="meta">Select a row.</p>'; return; }
+    const e = selected, d = e.decision;
+    const cands = e.candidates.map((c, i) => {
+      const others = e.candidates.map((o, j) => j === i ? null : `${metres(c, o)} m from #${j + 1}`).filter(Boolean).join(', ');
+      const label = c.source === 'osm_poi' ? `${esc(c.osm_name)} <span class="meta">(${esc(c.amenity)}, ${esc(c.osm)})</span>` : 'geocoder hit, rank 30';
+      return `<div class="candidate ${c.source === 'osm_poi' ? 'poi' : 'geo'} ${c.in_municipality ? '' : 'outside'}">
+        <span class="n">${i + 1}</span>${label}<div class="meta">${c.settlement ? esc(c.settlement) : 'settlement unknown'}${c.in_municipality ? '' : ' · outside the municipality'}${others ? ' · ' + others : ''}</div>
+        <div class="meta"><a target="_blank" href="https://www.openstreetmap.org/?mlat=${c.lat}&mlon=${c.lon}#map=18/${c.lat}/${c.lon}">OSM</a> · <a target="_blank" href="https://www.google.com/maps/search/?api=1&query=${c.lat},${c.lon}">Google Maps</a></div></div>`;
+    }).join('');
+    const cur = pin || (d.lat != null ? { lat: d.lat, lon: d.lon } : null);
+    const q = encodeURIComponent((e.key.address || e.name) + ', Варна');
+    const pinLine = cur ? `Pin: ${fmt(cur.lat, cur.lon)} (${pin ? pinPrecision : d.precision || ''}) · <a target="_blank" href="https://www.openstreetmap.org/?mlat=${cur.lat}&mlon=${cur.lon}#map=18/${cur.lat}/${cur.lon}">OSM</a> · <a target="_blank" href="https://www.google.com/maps/search/?api=1&query=${cur.lat},${cur.lon}">Google Maps</a>` : 'No pin yet — click the map to place one.';
+    box.innerHTML = `
+      <p class="address">${esc(e.key.address || '(no address)')}</p>
+      <div class="meta">${esc(e.name)} · ${esc(e.key.kind)}/${esc(e.key.external_id)} · ${e.key.role}${e.key.label ? ' · ' + esc(e.key.label) : ''} · status <b>${d.status}</b>
+        · <a target="_blank" href="https://www.google.com/maps/search/?api=1&query=${q}">search this address in Google Maps</a></div>
+      <div class="chips">${e.reasons.map(r => `<span class="chip">${esc(r)}</span>`).join('')}</div>
+      <div class="candidates">${cands || '<span class="meta">No candidates.</span>'}</div>
+      <div class="meta">${pinLine}</div>
+      <div class="actions">
+        ${e.candidates.map((_, i) => `<button data-a="accept" data-i="${i}"><kbd>${i + 1}</kbd>accept #${i + 1}</button>`).join('')}
+        <button data-a="enter"><kbd>Enter</kbd>save pin${pin ? '' : ' (click map first)'}</button>
+        <button data-a="approx"><kbd>A</kbd>${pinPrecision === 'approximate' ? 'approximate ✓' : 'building'}</button>
+        <button data-a="nopin"><kbd>N</kbd>no pin</button>
+        <button data-a="undo"><kbd>U</kbd>undo</button>
+        <button data-a="prev"><kbd>K</kbd>prev</button>
+        <button data-a="next"><kbd>J</kbd>next</button>
+        <span class="status ${status.ok ? 'ok' : 'err'}">${esc(status.text)}</span>
+      </div>`;
+    box.querySelectorAll('button[data-a]').forEach(b => b.onclick = () => action(b.dataset.a, b.dataset.i));
+  }
+
+  async function post(path, body) {
+    const r = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
+    const payload = await r.json();
+    if (!r.ok) throw new Error(payload.error || r.statusText);
+    return payload;
+  }
+
+  async function decide(body) {
+    if (!selected) return;
+    try {
+      await post('/api/decision', Object.assign({ key: selected.key }, body));
+      await load();
+      // Advance to the next pending row first: select() clears the status,
+      // and "Saved" has to survive the move.
+      const next = visible().find(e => e.decision.status === 'pending' && !sameKey(e, selected));
+      if (next) select(next, false);
+      setStatus('Saved', true);
+      render();
+    } catch (err) {
+      await load();
+      setStatus('Not saved: ' + err.message, false);
+    }
+  }
+
+  function accept(i) { decide({ status: 'accepted', candidate: i }); }
+
+  function move(delta) {
+    const items = visible(); if (!items.length) return;
+    const idx = selected ? items.findIndex(e => sameKey(e, selected)) : -1;
+    select(items[Math.min(items.length - 1, Math.max(0, idx + delta))], true);
+  }
+
+  async function action(a, i) {
+    switch (a) {
+      case 'accept': return accept(Number(i));
+      case 'enter': if (pin) return decide({ status: 'pinned', lat: pin.lat, lon: pin.lon, precision: pinPrecision }); return setStatus('Click the map to place a pin first', false);
+      case 'approx': pinPrecision = pinPrecision === 'approximate' ? 'building' : 'approximate'; return renderDetail();
+      case 'nopin': return decide({ status: 'no_pin' });
+      case 'undo':
+        try { await post('/api/undo'); await load(); setStatus('Undone', true); } catch (err) { setStatus(err.message, false); }
+        return;
+      case 'next': return move(1);
+      case 'prev': return move(-1);
+    }
+  }
+
+  document.addEventListener('keydown', ev => {
+    if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
+    const k = ev.key;
+    if (/^[1-9]$/.test(k)) { const i = Number(k) - 1; if (selected && i < selected.candidates.length) { ev.preventDefault(); accept(i); } return; }
+    const keys = { Enter: 'enter', a: 'approx', A: 'approx', n: 'nopin', N: 'nopin', u: 'undo', U: 'undo', j: 'next', J: 'next', k: 'prev', K: 'prev' };
+    if (keys[k]) { ev.preventDefault(); action(keys[k]); }
+  });
+
+  load();
+})();
+</script>
+</body>
+</html>
