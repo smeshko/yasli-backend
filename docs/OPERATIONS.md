@@ -163,3 +163,204 @@ upsert phase:
 The gated passes will NOT propagate ГРАО reassignments that affect
 already-stamped rows. That is by design (the weekly pipeline must not
 silently churn district stamps). Use `restamp-districts` for that.
+
+---
+
+## Institution locations refresh
+
+`institution_locations` is what puts a pin on a parent's map: one row per
+building an institution occupies — its `main` building and any `branch`
+buildings — with a coordinate and how that coordinate was decided. No
+source publishes coordinates, and geocoding measurably cannot be trusted
+here (three of the sixty addresses Nominatim resolved in the research were
+confidently wrong, one in Игнатиево, one in Аксаково, one in the village of
+Константиново — see `INSTITUTION_DETAIL_MAP_RESEARCH.md` §3.2 in the
+`openspec/docs` folder of the `yasli/` parent). So the table is a **curated
+reference dataset**: a committed CSV, seeded by strict rules and finished
+by a person, loaded by its own CLI. A stale row is a parent at the wrong
+building, which is why the loader refuses to load a file it cannot fully
+attribute.
+
+The committed artifacts, both in `data/`:
+
+- `institution_locations.csv` — the rows. Columns: `kind, external_id,
+  role, label, address, lat, lon, precision, source, verification,
+  verified_at`. Joins `institutions` on `(kind, external_id)`, never on the
+  serial id, which a re-ingest does not preserve.
+- `institution_locations.provenance.json` — one entry per
+  `verification=auto` row, recording the OSM identity and the four
+  auto-accept rule outcomes (title-match count, inside the municipality,
+  reverse-geocoded settlement next to the address's settlement, distance to
+  the rank-30 geocode). The parser rejects an `auto` row without a matching,
+  all-pass entry, so an `auto` pin can be audited from the repo alone, and a
+  hand-edited `auto` row fails to parse.
+
+Both files are written only by the seed script and the review tool, never
+by hand, and always together.
+
+Each row carries three provenance columns:
+
+| Column | Values | Meaning |
+| --- | --- | --- |
+| `precision` | `building`, `approximate`, `none` | how precise the pin is; `approximate` is a hand-placed pin on the block rather than the building; `none` is a deliberate blank |
+| `source` | `osm_poi`, `nominatim`, `manual` | where the coordinate came from: an OSM point of interest, the geocoder, or a person's hand |
+| `verification` | `auto`, `human` | how the row was decided: by the seed script's rules, or by a person in the review tool |
+
+`auto` is only ever `osm_poi` + `main` + `building` — the database CHECK and
+the parser both enforce it. A row is auto-accepted only when **all four**
+rules hold: the OSM POI title match is unique (one POI carries the title,
+one institution owns it) within the kind's amenity family; the POI is inside
+the committed Varna municipality polygon (`data/varna_municipality.geojson`);
+its reverse-geocoded settlement agrees with the settlement the address
+names (a village address must match its village, a city address must
+resolve to Варна); and if a rank-30 geocode exists it lies within 150 m.
+Everything else — geocoder-only hits, ambiguous titles, disagreements, no
+candidate, every branch — goes to a person. **Geocoder output is never
+accepted without review**: all three measured wrong pins were geocoder hits.
+
+A `verification=human` row is a person's judgement that the seed script
+cannot reproduce. The script is resumable and keeps those decisions; do not
+"fix" a row by editing the CSV by hand, re-run the tool instead.
+
+### When to refresh
+
+- **A new institution appears in the weekly ingest.** It has no `main` row,
+  so the next loader run aborts until the row is reviewed. `--dry-run`
+  shows it without loading.
+- **An institution's address changes in the weekly ingest.** Ingest
+  overwrites `institutions.address`, and a moved institution with its old
+  pin is exactly the wrong pin that looks right. The loader compares every
+  `main` row's address with the table's through one normaliser (quote
+  styles, `№` spacing, case, whitespace) and aborts on a difference; a seed
+  re-run returns the row to review flagged `address_changed`.
+- **Someone reports a wrong pin.** Correct it in the review tool; the row
+  becomes `human` and its provenance entry is dropped.
+
+The loader runs **after** ingest, never with it: `just be-ingest` does not
+touch this table. Coordinates change roughly never, and coupling a
+reference load to the weekly cron would let a third-party outage during the
+seed script's data collection break the routing refresh.
+
+### Where to get the file
+
+The file is in the repo. A fresh checkout is complete: the committed CSV
+and provenance file are the record, and the review tool's working state
+(`data/institution_locations.candidates.json`, gitignored) is a local cache
+that the seed script rebuilds from the committed files whenever it is
+missing or stale (it stores the hash of the files it was last regenerated
+from; a mismatch means the committed files moved and they win).
+
+To refresh the file, run the loop on a checkout with `DATABASE_URL`
+pointing at a database with current institutions (a fresh `just be-ingest`
+locally is enough):
+
+```bash
+# 1. Gather candidates and apply the auto-accept rules. Needs the network
+#    (Overpass, Nominatim at ~1 req/s, dg.uslugi.io); ~10 minutes.
+#    Keeps every accepted / pinned / no_pin decision from a previous run;
+#    refreshes only auto and pending rows; re-flags moved institutions.
+uv run python -m scripts.seed_institution_locations
+
+# 2. Resolve the flagged rows on a map. Opens http://127.0.0.1:8765/.
+#    1/2 accept a candidate, click or paste coordinates (P) to place a pin,
+#    A marks it approximate, N no pin, U undo, Enter saves and moves on.
+#    Every decision lands in the CSV at once, through the parser.
+uv run python -m scripts.review_locations
+
+# 3. Commit the two files together.
+git add data/institution_locations.csv data/institution_locations.provenance.json
+git commit -m "feat(data): refresh institution locations"
+
+# 4. Load — see below.
+```
+
+A seed re-run rewrites the CSV and the provenance file from every decided
+entry, so `human` rows survive it. Nothing decided is lost by deleting the
+candidates file either — the seed script rebuilds decisions from the
+committed files; what would lose decisions is discarding the CSV changes
+before they are committed.
+
+The seed script and review tool are committed but are not a maintained
+pipeline: the CSV is the artifact of record, and `tests/test_institution_locations_data.py`
+pins its shape (77 `main` rows, one per institution; 17 `branch` rows; the
+cases the plan names).
+
+### Loading the file into the database
+
+The loader runs wherever the ГРАО loader runs: from a Railway "exec into
+deployment" shell (the image copies `data/`), or from a checkout against a
+tunnelled `DATABASE_URL`. The `just be-load-locations` recipe lives in the
+`yasli/` parent `justfile`, outside this repo, next to `be-ingest`.
+
+```bash
+# Check first: runs every guard and prints the summary without touching
+# the table. This is the "is the CSV still current?" question.
+python -m yasli.ingest.institution_locations_loader --dry-run
+
+# Load. Default path: data/institution_locations.csv, resolved relative
+# to the package, not the working directory. TRUNCATE + INSERT inside
+# one transaction; running it twice leaves the same observable state.
+python -m yasli.ingest.institution_locations_loader
+
+# Expected output:
+# institution_locations_loader done rows=94 main=77 branch=17 auto=37 \
+#   human=57 missing_main=0 address_drift=0 unresolved_main=0 dry_run=0
+# followed by one line per unresolved main row (none expected).
+```
+
+Three guards run **before** the TRUNCATE, all resolved against
+`institutions` in one query, so a bad file fails as a data problem with
+names and the table is never emptied even transiently:
+
+1. **Unmatched `(kind, external_id)`** — a row whose pair matches no
+   institution. Never skippable. Exit 4.
+2. **Missing `main`** — a current institution with no `main` row: a
+   half-finished review, or a CSV predating a newly ingested institution.
+   Exit 4, naming the institutions. An explicit `no_pin` row
+   (`precision=none`) counts as present.
+3. **Address drift** — a `main` row whose address no longer matches the
+   institution's. Exit 4, naming the institution and both addresses.
+
+`--allow-incomplete` ("the CSV lags the institutions table") skips guards 2
+and 3 for **local partial loads only** and is never used against
+production; the summary then reports the missing and drifted rows by name.
+Other exit codes: 2 file not found, 3 parse failure (with the line
+number), 5 database error.
+
+### Verification after refresh
+
+```bash
+# From the yasli/ parent (`just db-psql` is interactive and takes no arguments).
+docker compose exec -T postgres psql -U yasli -d yasli \
+  -c "SELECT role, precision, count(*) FROM institution_locations GROUP BY 1,2 ORDER BY 1,2"
+# Expect main/building 77 (or a few main/approximate), branch/building 16, branch/none 1.
+
+docker compose exec -T postgres psql -U yasli -d yasli \
+  -c "SELECT i.kind, i.external_id, i.name FROM institutions i \
+      LEFT JOIN institution_locations l \
+        ON l.kind = i.kind AND l.external_id = i.external_id AND l.role = 'main' \
+      WHERE l.kind IS NULL"
+# Expect zero rows: every institution has a main row.
+
+# Address drift is not expressible in SQL (the comparison is normalised);
+# the dry run is the check:
+python -m yasli.ingest.institution_locations_loader --dry-run
+# Expect missing_main=0 address_drift=0.
+```
+
+Then open a kindergarten with branches in the API (phase 1.3) or the
+review tool's `Auto-accepted` tab and spot-check a few pins against their
+source address.
+
+### Rollback
+
+There is no "previous locations" version in the database, but there is in
+git: check out the previous `data/institution_locations.csv` and
+`data/institution_locations.provenance.json` together and run the loader
+again. Never roll back one file without the other — the parser rejects a
+CSV whose `auto` rows have no matching provenance entry, and a provenance
+entry with no `auto` row.
+
+If the table must be emptied, `TRUNCATE institution_locations;` is safe:
+nothing else references it, the detail endpoint renders without a map, and
+the next loader run fills it again.

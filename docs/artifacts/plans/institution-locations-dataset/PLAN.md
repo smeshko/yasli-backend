@@ -272,5 +272,5 @@ Task state lives here. Update the checkboxes as work progresses.
 - [x] TASK-004: Seed candidates and apply the auto-accept rules (depends on TASK-002)
 - [x] TASK-005: Build the location review tool (depends on TASK-004)
 - [x] TASK-006: Review flagged rows in the review tool (depends on TASK-005)
-- [ ] TASK-007: Document the manual refresh cadence (depends on TASK-006)
+- [x] TASK-007: Document the manual refresh cadence (depends on TASK-006)
 - [ ] TASK-008: Final Validation
