@@ -1,6 +1,6 @@
 # Plan: Institution locations reference dataset
 
-Status: draft
+Status: in-progress
 Branch: feature/yas-7-institution-locations-dataset
 Risk: large
 Epic: 01 — Institution data foundation ([epic](../../epics/01-institution-data-foundation.md))
@@ -266,7 +266,7 @@ See [RESEARCH.md](./RESEARCH.md). The short version:
 
 Task state lives here. Update the checkboxes as work progresses.
 
-- [ ] TASK-001: Add the institution_locations table
+- [x] TASK-001: Add the institution_locations table
 - [ ] TASK-002: Parse and validate the locations reference file (depends on TASK-001)
 - [ ] TASK-003: Load the reference file idempotently via a CLI (depends on TASK-002)
 - [ ] TASK-004: Seed candidates and apply the auto-accept rules (depends on TASK-002)

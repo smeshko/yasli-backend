@@ -78,7 +78,7 @@ Run `just be-migrate` then `just be-ingest` against the real R2 snapshot and sho
 
 ## Phase 1.2 — Institution locations reference dataset
 
-**Plan**: [institution-locations-dataset](../plans/institution-locations-dataset/PLAN.md) · status: planned
+**Plan**: [institution-locations-dataset](../plans/institution-locations-dataset/PLAN.md) · status: in-progress
 
 **Linear**: YAS-7 (https://linear.app/ivo-tsonev/issue/YAS-7)
 

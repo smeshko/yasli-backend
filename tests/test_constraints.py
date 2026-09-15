@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 from sqlalchemy import create_engine, text
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import DataError, IntegrityError
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -383,5 +383,149 @@ def test_address_institutions_pkey_rejects_duplicate(head_db: str) -> None:
 
         with engine.begin() as conn, pytest.raises(IntegrityError):
             _insert_edge(conn, address_id=address_id, institution_id=inst_id)
+    finally:
+        engine.dispose()
+
+
+# --- institution_locations (revision 0010) ---------------------------------
+
+
+def _insert_location(conn, **overrides) -> None:
+    row = {
+        "kind": "kindergarten",
+        "external_id": "46",
+        "role": "main",
+        "label": "",
+        "address": 'ул. "Никола Михайловски" №6',
+        "lat": "43.206500",
+        "lon": "27.914200",
+        "precision": "building",
+        "source": "osm_poi",
+        "verification": "auto",
+        "verified_at": "2026-09-14",
+    }
+    row.update(overrides)
+    conn.execute(
+        text(
+            "INSERT INTO institution_locations "
+            "(kind, external_id, role, label, address, lat, lon, precision, "
+            " source, verification, verified_at) "
+            "VALUES (:kind, :external_id, :role, :label, :address, :lat, :lon, "
+            " :precision, :source, :verification, :verified_at)"
+        ),
+        row,
+    )
+
+
+@pytest.fixture
+def location_db(head_db: str) -> str:
+    engine = create_engine(head_db, future=True)
+    try:
+        with engine.begin() as conn:
+            _insert_institution(conn, external_id="46", kind="kindergarten", name='ДГ№13 "Мир"')
+            _insert_institution(conn, external_id="17", kind="kindergarten")
+    finally:
+        engine.dispose()
+    return head_db
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        pytest.param({"lon": None}, id="lat-without-lon"),
+        pytest.param({"precision": "none"}, id="precision-none-with-coordinate"),
+        pytest.param(
+            {"lat": None, "lon": None, "source": "manual", "verification": "human"},
+            id="precision-building-without-coordinate",
+        ),
+        # 'satellite' overflows String(8) before the CHECK can fire (DataError);
+        # 'annex' fits and exercises the CHECK itself (IntegrityError).
+        pytest.param({"role": "satellite"}, id="unknown-role-too-long"),
+        pytest.param({"role": "annex"}, id="unknown-role"),
+        pytest.param({"source": "guess"}, id="unknown-source"),
+        pytest.param({"precision": "street"}, id="unknown-precision"),
+        pytest.param({"verification": "maybe"}, id="unknown-verification"),
+        pytest.param({"source": "manual", "verification": "auto"}, id="manual-auto"),
+        pytest.param({"source": "nominatim"}, id="auto-nominatim"),
+        pytest.param({"role": "branch"}, id="auto-branch"),
+        pytest.param({"precision": "approximate"}, id="auto-approximate"),
+    ],
+)
+def test_institution_locations_check_rejects(location_db: str, overrides) -> None:
+    engine = create_engine(location_db, future=True)
+    try:
+        with engine.begin() as conn, pytest.raises((IntegrityError, DataError)):
+            _insert_location(conn, **overrides)
+    finally:
+        engine.dispose()
+
+
+def test_institution_locations_unique_tuple_allows_label_difference(location_db: str) -> None:
+    engine = create_engine(location_db, future=True)
+    try:
+        with engine.begin() as conn:
+            _insert_location(conn, role="branch", source="manual", verification="human")
+            _insert_location(
+                conn, role="branch", label="Б", source="manual", verification="human"
+            )
+        with engine.begin() as conn, pytest.raises(IntegrityError):
+            _insert_location(conn, role="branch", source="manual", verification="human")
+    finally:
+        engine.dispose()
+
+
+def test_institution_locations_one_main_per_institution(location_db: str) -> None:
+    engine = create_engine(location_db, future=True)
+    try:
+        with engine.begin() as conn:
+            _insert_location(conn)
+        with engine.begin() as conn, pytest.raises(IntegrityError):
+            _insert_location(conn, address="другаде 1", source="manual", verification="human")
+        with engine.begin() as conn:
+            _insert_location(
+                conn, role="branch", address="ул. Батак 6", source="manual",
+                verification="human",
+            )
+            _insert_location(
+                conn, role="branch", address="ул. Батак 8", source="manual",
+                verification="human",
+            )
+            count = conn.execute(
+                text("SELECT count(*) FROM institution_locations")
+            ).scalar_one()
+        assert count == 3
+    finally:
+        engine.dispose()
+
+
+def test_institution_locations_fk_rejects_unknown_institution(location_db: str) -> None:
+    engine = create_engine(location_db, future=True)
+    try:
+        with engine.begin() as conn, pytest.raises(IntegrityError):
+            _insert_location(conn, external_id="999")
+        with engine.begin() as conn, pytest.raises(IntegrityError):
+            # Same external_id, different kind — the pair must match.
+            _insert_location(conn, kind="nursery")
+    finally:
+        engine.dispose()
+
+
+def test_institution_locations_fk_restricts_institution_delete(location_db: str) -> None:
+    engine = create_engine(location_db, future=True)
+    try:
+        with engine.begin() as conn:
+            _insert_location(conn)
+        with engine.begin() as conn, pytest.raises(IntegrityError):
+            conn.execute(
+                text(
+                    "DELETE FROM institutions "
+                    "WHERE external_id = '46' AND kind = 'kindergarten'"
+                )
+            )
+        with engine.connect() as conn:
+            still_there = conn.execute(
+                text("SELECT count(*) FROM institution_locations")
+            ).scalar_one()
+        assert still_there == 1
     finally:
         engine.dispose()
