@@ -275,6 +275,26 @@ def test_main_rows_for_different_kinds_are_independent() -> None:
 # --- provenance ----------------------------------------------------------------------------
 
 
+def test_over_long_cells_are_rejected_with_the_table_limit_and_line_number() -> None:
+    """Parser/table parity for the free-text columns: an over-long cell
+    must fail here with a line number, not at INSERT after the TRUNCATE."""
+    from yasli.ingest.institution_locations_loader import MAX_LENGTHS
+    from yasli.models import InstitutionLocation
+
+    assert MAX_LENGTHS == {
+        c: InstitutionLocation.__table__.c[c].type.length for c in ("external_id", "label", "address")
+    }
+    long_address = "ул. " + "Б" * 253  # 257 characters
+    err = _error(_csv(BRANCH_HUMAN, f"kindergarten,46,branch,,{long_address},43.207100,27.913800,"
+                                    "building,manual,human,2026-09-14"))
+    assert err.line_no == 3
+    assert "address is 257 characters" in str(err) and "256" in str(err)
+    err = _error(_csv(f"kindergarten,17,branch,{'Ж' * 129},,,,none,manual,human,2026-09-14"))
+    assert err.line_no == 2 and "label is 129 characters" in str(err)
+    err = _error(_csv("kindergarten,12345678901234567,main,,x,,,none,manual,human,2026-09-14"))
+    assert err.line_no == 2 and "external_id is 17 characters" in str(err)
+
+
 def test_auto_row_without_provenance_entry_rejected() -> None:
     err = _error(_csv(MAIN_AUTO), {})
     assert err.line_no == 2
