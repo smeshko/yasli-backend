@@ -187,6 +187,42 @@ def poi_candidates(kind: str, name: str, pois: Iterable[Mapping[str, Any]]) -> l
     ]
 
 
+def poi_candidates_for_branch(
+    kind: str, parent_name: str, label: str, pois: Iterable[Mapping[str, Any]]
+) -> list[dict[str, Any]]:
+    """POIs that name a branch building: a title equal to the branch's own
+    label (``Детска градина "Жирафче"``), or the parent's title on a POI whose
+    name says филиал (``ДГ-4 "Теменужка" Филиал 1``). The parent's own
+    building never qualifies. Branches are always flagged for review, so
+    these are hints for one keystroke, never auto-accepted."""
+    family = AMENITY_FAMILIES[kind]
+    own = label.casefold().strip() or None
+    parent = title_of(parent_name)
+    matches = [
+        p
+        for p in pois
+        if p["amenity"] in family
+        and (
+            (own is not None and title_of(p["name"]) == own)
+            or (parent is not None and title_of(p["name"]) == parent and "филиал" in p["name"].casefold())
+        )
+    ]
+    return [
+        {
+            "source": "osm_poi",
+            "lat": p["lat"],
+            "lon": p["lon"],
+            "osm": p["osm"],
+            "osm_name": p["name"],
+            "amenity": p["amenity"],
+            "title_matches": len(matches),
+            "settlement": None,
+            "in_municipality": in_varna_municipality(p["lat"], p["lon"]),
+        }
+        for p in matches
+    ]
+
+
 def title_owner_counts(institutions: Iterable[tuple[str, str, str]]) -> Counter[str]:
     """How many institutions share each title, across kinds — a POI whose
     title two institutions own cannot be a unique match for either."""
@@ -575,8 +611,10 @@ class Gatherer:
         candidates: list[dict[str, Any]] = []
         if role == "main":
             candidates = poi_candidates(kind, entry["name"], self.pois)
-            for candidate in candidates:
-                candidate["settlement"] = self.settlement_at(candidate["lat"], candidate["lon"])
+        else:
+            candidates = poi_candidates_for_branch(kind, entry["name"], key["label"], self.pois)
+        for candidate in candidates:
+            candidate["settlement"] = self.settlement_at(candidate["lat"], candidate["lon"])
         if address:
             try:
                 geocodes = geocode_candidates(nominatim_search(build_query(address)))
