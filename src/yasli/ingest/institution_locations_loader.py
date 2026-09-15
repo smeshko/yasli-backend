@@ -248,21 +248,31 @@ def _check_provenance_entry(
             f"provenance entry {key} records coordinate {entry_lat},{entry_lon}, "
             f"row has {lat},{lon}",
         )
-    if entry.get("title_matches") != 1:
+    # Types are checked as strictly as values: JSON's ``true`` is not the
+    # integer 1, and a quoted number is not a distance. A hand-edited entry
+    # fails here with a line number rather than with a TypeError.
+    title_matches = entry.get("title_matches")
+    if isinstance(title_matches, bool) or title_matches != 1:
         raise LocationRowError(
-            line_no, f"auto row {key}: title_matches is {entry.get('title_matches')!r}, not 1"
+            line_no, f"auto row {key}: title_matches is {title_matches!r}, not 1"
         )
     if entry.get("in_municipality") is not True:
         raise LocationRowError(line_no, f"auto row {key}: in_municipality is not true")
     settlement = entry.get("settlement")
     address_settlement = entry.get("address_settlement")
-    if not settlement or settlement != address_settlement:
+    if not isinstance(settlement, str) or not settlement or settlement != address_settlement:
         raise LocationRowError(
             line_no,
             f"auto row {key}: settlement {settlement!r} does not agree with "
             f"address_settlement {address_settlement!r}",
         )
     distance = entry.get("geocode_distance_m")
+    if distance is not None and (
+        isinstance(distance, bool) or not isinstance(distance, (int, float))
+    ):
+        raise LocationRowError(
+            line_no, f"auto row {key}: geocode_distance_m {distance!r} is not a number"
+        )
     if distance is not None and distance > MAX_GEOCODE_DISTANCE_M:
         raise LocationRowError(
             line_no,
