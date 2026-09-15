@@ -123,6 +123,15 @@ COLUMNS: tuple[str, ...] = (
 #: The natural key of a building row — the table's UNIQUE tuple.
 KEY_COLUMNS: tuple[str, ...] = ("kind", "external_id", "role", "label", "address")
 
+#: The free-text columns' lengths, read off the model so they cannot drift
+#: from the table. Checked here so an over-long cell fails with a line
+#: number before the TRUNCATE, not as a database error after it. The
+#: closed-set columns are covered by their value checks.
+MAX_LENGTHS: dict[str, int] = {
+    column: InstitutionLocation.__table__.c[column].type.length
+    for column in ("external_id", "label", "address")
+}
+
 #: Rule 4 of the auto-accept rules: a rank-30 geocode, when one exists,
 #: must agree with the POI within this distance.
 MAX_GEOCODE_DISTANCE_M = 150
@@ -265,6 +274,12 @@ def _parse_row(
     line_no: int, raw: Mapping[str, str | None], provenance: Mapping[str, dict[str, Any]]
 ) -> dict[str, Any]:
     cells = {c: (raw.get(c) or "").strip() for c in COLUMNS}
+    for column, limit in MAX_LENGTHS.items():
+        if len(cells[column]) > limit:
+            raise LocationRowError(
+                line_no,
+                f"{column} is {len(cells[column])} characters; the table allows {limit}",
+            )
     kind = _require_in(line_no, "kind", cells["kind"], KIND_VALUES)
     external_id = cells["external_id"]
     if not external_id:
