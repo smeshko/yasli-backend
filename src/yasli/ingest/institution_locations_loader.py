@@ -394,11 +394,16 @@ def _format_cell(column: str, value: Any) -> str:
         return f"{Decimal(str(value)).quantize(_COORD_PLACES):f}"
     if column == "verified_at" and isinstance(value, date):
         return value.isoformat()
-    return str(value)
+    return str(value).strip()
 
 
 def render_csv(rows: Iterable[Mapping[str, Any]]) -> str:
-    """Rows -> CSV text in the file's stable order, without validating."""
+    """Rows -> CSV text in the file's stable order, without validating.
+
+    String cells are stripped, as the parser strips them, so a written file
+    always parses back to the rows it was rendered from: a trailing space
+    in ``address`` must not make one building two.
+    """
     ordered = sorted(rows, key=lambda r: tuple(str(r.get(c) or "") for c in KEY_COLUMNS))
     buf = io.StringIO()
     writer = csv.writer(buf, quoting=csv.QUOTE_MINIMAL, lineterminator="\n")
