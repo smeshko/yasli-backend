@@ -603,6 +603,19 @@ def test_plan_refresh_quote_style_change_is_not_a_move() -> None:
     assert len(kept_entries) == 1
 
 
+def test_prune_stale_branches_drops_only_branches_missing_from_the_inventory() -> None:
+    main_entry = _entry("accepted", candidate=0)
+    current = _entry("pinned", role="branch", address="ул. Батак 6", lat=43.21, lon=27.92,
+                     precision="building")
+    stale = _entry("pinned", role="branch", address="ул. Батак 8 (стар адрес)", lat=43.21,
+                   lon=27.92, precision="building")
+    entries = {state.entry_key(e): e for e in (main_entry, current, stale)}
+    inventory = [state.entry_key(current)]
+    kept, dropped = seed.prune_stale_branches(entries, inventory)
+    assert dropped == [state.entry_key(stale)]
+    assert set(kept) == {state.entry_key(main_entry), state.entry_key(current)}
+
+
 def test_seed_script_never_imported_by_the_package() -> None:
     src = Path(__file__).resolve().parents[1] / "src" / "yasli"
     offenders = [p for p in src.rglob("*.py") if "scripts" in p.read_text(encoding="utf-8")]

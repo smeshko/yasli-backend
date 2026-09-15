@@ -468,6 +468,26 @@ def branch_entries(
 # --- resumability -------------------------------------------------------------------------
 
 
+def prune_stale_branches(
+    entries: Mapping[state.Key, Mapping[str, Any]], inventory: Iterable[state.Key]
+) -> tuple[dict[state.Key, dict[str, Any]], list[state.Key]]:
+    """Drop branch entries the current free-places inventory no longer lists —
+    a branch whose address text changed at the source would otherwise linger
+    next to its new key. Main entries are never touched here (they are re-keyed
+    by ``plan_refresh``). Only call this with a full inventory: the endpoint is
+    seasonal, and a short fetch must not retire real branches."""
+    keep_keys = set(inventory)
+    kept: dict[state.Key, dict[str, Any]] = {}
+    dropped: list[state.Key] = []
+    for key, entry in entries.items():
+        if key[2] == "branch" and key not in keep_keys:
+            dropped.append(key)
+        else:
+            kept[key] = dict(entry)
+    return kept, dropped
+
+
+
 def plan_refresh(
     existing: Mapping[state.Key, Mapping[str, Any]],
     institutions: Mapping[tuple[str, str], Mapping[str, Any]],
@@ -733,6 +753,15 @@ def main(argv: list[str] | None = None) -> int:
             RESEARCH_BRANCH_COUNT,
         )
     branches, orphans = branch_entries(branch_rows, institutions)
+    if len(branch_rows) >= RESEARCH_BRANCH_COUNT:
+        inventory = [state.entry_key(e) for e in branches]
+        to_gather, dropped = prune_stale_branches(to_gather, inventory)
+        kept_by_key, dropped_kept = prune_stale_branches(
+            {state.entry_key(e): e for e in kept}, inventory
+        )
+        kept = list(kept_by_key.values())
+        for key in dropped + dropped_kept:
+            log.warning("retiring branch no longer in the free-places table: %s", key)
     for entry in branches:
         key = state.entry_key(entry)
         if key not in to_gather and not any(state.entry_key(e) == key for e in kept):
