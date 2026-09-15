@@ -268,7 +268,7 @@ Task state lives here. Update the checkboxes as work progresses.
 
 - [x] TASK-001: Add the institution_locations table
 - [x] TASK-002: Parse and validate the locations reference file (depends on TASK-001)
-- [ ] TASK-003: Load the reference file idempotently via a CLI (depends on TASK-002)
+- [x] TASK-003: Load the reference file idempotently via a CLI (depends on TASK-002)
 - [ ] TASK-004: Seed candidates and apply the auto-accept rules (depends on TASK-002)
 - [ ] TASK-005: Build the location review tool (depends on TASK-004)
 - [ ] TASK-006: Review flagged rows in the review tool (depends on TASK-005)

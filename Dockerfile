@@ -11,6 +11,9 @@ COPY pyproject.toml README.md ./
 COPY src ./src
 COPY alembic.ini ./alembic.ini
 COPY migrations ./migrations
+# Committed reference data (institution locations CSV + municipality polygon)
+# so the locations loader runs from a Railway exec shell like the ГРАО one.
+COPY data ./data
 
 RUN pip install -e .
 
