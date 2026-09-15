@@ -78,7 +78,7 @@ Run `just be-migrate` then `just be-ingest` against the real R2 snapshot and sho
 
 ## Phase 1.2 — Institution locations reference dataset
 
-**Plan**: [institution-locations-dataset](../plans/institution-locations-dataset/PLAN.md) · status: in-progress
+**Plan**: [institution-locations-dataset](../plans/institution-locations-dataset/PLAN.md) · status: done
 
 **Linear**: YAS-7 (https://linear.app/ivo-tsonev/issue/YAS-7)
 
@@ -97,15 +97,15 @@ Run `just be-migrate` then `just be-ingest` against the real R2 snapshot and sho
 
 ### Acceptance criteria
 
-- [ ] All 77 institutions have a `main` row; every coordinate is inside the Varna municipality polygon and is either auto-accepted by the rules above or resolved by a person in the review tool
-- [ ] The 3 measured geocoder failures (research §3.2) are not shipped as pins
-- [ ] `main` rows nobody could pin carry no coordinate and are listed by name in the loader summary (target: 0) — a blank, never a guess
-- [ ] The 12 branch buildings that have an address have a `branch` row; the 3 name-only branches ("Жирафче", "Другарче", "Бисерче") are present with a label and a NULL coordinate, not silently dropped
-- [ ] Every row records `precision`, `source` and `verification`, so a later pass can tell an auto-accepted pin from a human-reviewed one
-- [ ] The review tool shows flagged rows on a map with their reasons, and a decision made in it lands in the committed CSV and passes the parser
-- [ ] Running the loader twice leaves the table in the same state
-- [ ] The loader fails loudly on a row whose `(kind, external_id)` has no matching institution
-- [ ] `just be-test` and `just be-lint` pass
+- [x] All 77 institutions have a `main` row; every coordinate is inside the Varna municipality polygon and is either auto-accepted by the rules above or resolved by a person in the review tool
+- [x] The 3 measured geocoder failures (research §3.2) are not shipped as pins
+- [x] `main` rows nobody could pin carry no coordinate and are listed by name in the loader summary (target: 0) — a blank, never a guess
+- [x] The 12 branch buildings that have an address have a `branch` row; the 3 name-only branches ("Жирафче", "Другарче", "Бисерче") are present with a label and a NULL coordinate, not silently dropped
+- [x] Every row records `precision`, `source` and `verification`, so a later pass can tell an auto-accepted pin from a human-reviewed one
+- [x] The review tool shows flagged rows on a map with their reasons, and a decision made in it lands in the committed CSV and passes the parser
+- [x] Running the loader twice leaves the table in the same state
+- [x] The loader fails loudly on a row whose `(kind, external_id)` has no matching institution
+- [x] `just be-test` and `just be-lint` pass
 
 ### Validation
 
@@ -150,5 +150,5 @@ Run the loader against a fresh database and show the row counts by `role`, `prec
 
 - [ ] Every phase merged and its acceptance criteria met
 - [ ] A single API call returns everything a detail page needs for any of the 77 institutions
-- [ ] The coordinate dataset is reproducible: the seeding script and review tool are committed, and the auto-accept rules and review step are documented
+- [x] The coordinate dataset is reproducible: the seeding script and review tool are committed, and the auto-accept rules and review step are documented
 - [ ] Status row in [EPICS.md](./EPICS.md) updated to `Done`

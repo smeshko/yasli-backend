@@ -1,6 +1,6 @@
 # Plan: Institution locations reference dataset
 
-Status: in-progress
+Status: done
 Branch: feature/yas-7-institution-locations-dataset
 Risk: large
 Epic: 01 — Institution data foundation ([epic](../../epics/01-institution-data-foundation.md))
@@ -224,43 +224,43 @@ See [RESEARCH.md](./RESEARCH.md). The short version:
 
 ## Acceptance Criteria
 
-- [ ] All 77 institutions have a `main` row, and no institution has two: a
+- [x] All 77 institutions have a `main` row, and no institution has two: a
       second `main` for the same `(kind, external_id)` is rejected by the parser
       with its line number, and by the database
-- [ ] Every coordinate is inside the Varna municipality polygon, and each row is
+- [x] Every coordinate is inside the Varna municipality polygon, and each row is
       either `verification=auto` (with a committed provenance entry recording
       that all four rules passed) or `verification=human` (resolved in the
       review tool)
-- [ ] The three measured geocoder failures do not appear as pins: Игнатиево and
+- [x] The three measured geocoder failures do not appear as pins: Игнатиево and
       Аксаково are rejected by the polygon, Константиново by the settlement rule
-- [ ] `main` rows without a coordinate are listed by name in the loader summary
+- [x] `main` rows without a coordinate are listed by name in the loader summary
       (target: 0)
-- [ ] The 12 branch buildings that have an address have a `branch` row; the 3
+- [x] The 12 branch buildings that have an address have a `branch` row; the 3
       name-only branches are present with a label and NULL coordinates
-- [ ] Every row records `precision`, `source` and `verification`
-- [ ] Every `verification=auto` row is `source=osm_poi`, `role=main` and
+- [x] Every row records `precision`, `source` and `verification`
+- [x] Every `verification=auto` row is `source=osm_poi`, `role=main` and
       `precision=building`; the parser and the database reject anything else
-- [ ] An `auto` row without a matching, all-pass provenance entry is rejected
+- [x] An `auto` row without a matching, all-pass provenance entry is rejected
       by the parser with its line number
-- [ ] The review tool loads the candidates, shows flagged rows on a map with
+- [x] The review tool loads the candidates, shows flagged rows on a map with
       their reasons, and a decision made in it lands in the CSV and passes the
       parser
-- [ ] Running the loader twice leaves the table in the same observable state
-- [ ] The loader fails loudly on a row whose `(kind, external_id)` has no
+- [x] Running the loader twice leaves the table in the same observable state
+- [x] The loader fails loudly on a row whose `(kind, external_id)` has no
       matching institution
-- [ ] The loader aborts, before TRUNCATE and naming the institutions, when any
+- [x] The loader aborts, before TRUNCATE and naming the institutions, when any
       institution has **no** `main` row, unless `--allow-incomplete` is passed;
       either way the summary reports the count (expected: 0)
-- [ ] The loader aborts, before TRUNCATE and naming the institution, when a
+- [x] The loader aborts, before TRUNCATE and naming the institution, when a
       `main` row's address differs (normalised) from the institution's current
       address, unless `--allow-incomplete` is passed; a seed re-run returns
       such a row to review flagged `address_changed`
-- [ ] Starting the review tool with a stale candidates file, or re-running the
+- [x] Starting the review tool with a stale candidates file, or re-running the
       seed script on a fresh checkout, rebuilds decisions from the committed
       files and never reverts them
-- [ ] A row with a coordinate outside the municipality polygon is rejected by
+- [x] A row with a coordinate outside the municipality polygon is rejected by
       the parser, with the offending row identified
-- [ ] `just be-test` and `just be-lint` pass
+- [x] `just be-test` and `just be-lint` pass
 
 ## Tasks
 
@@ -273,4 +273,4 @@ Task state lives here. Update the checkboxes as work progresses.
 - [x] TASK-005: Build the location review tool (depends on TASK-004)
 - [x] TASK-006: Review flagged rows in the review tool (depends on TASK-005)
 - [x] TASK-007: Document the manual refresh cadence (depends on TASK-006)
-- [ ] TASK-008: Final Validation
+- [x] TASK-008: Final Validation
