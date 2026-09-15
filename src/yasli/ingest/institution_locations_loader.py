@@ -418,6 +418,7 @@ def _atomic_write(path: Path, text: str) -> None:
     try:
         with os.fdopen(fd, "w", encoding="utf-8", newline="") as fh:
             fh.write(text)
+        os.chmod(tmp_name, 0o644)  # mkstemp creates 0600; these are committed files
         os.replace(tmp_name, path)
     except BaseException:
         try:
@@ -666,6 +667,10 @@ def main(argv: list[str] | None = None) -> int:
         return 3
     try:
         engine = get_engine()
+    except ValueError as exc:  # Settings(): DATABASE_URL missing or malformed
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    try:
         with Session(engine) as session, session.begin():
             summary = load_rows(
                 rows, session, allow_incomplete=args.allow_incomplete, dry_run=args.dry_run

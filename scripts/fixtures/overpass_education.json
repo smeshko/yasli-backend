@@ -1,0 +1,2266 @@
+{
+  "version": 0.6,
+  "generator": "Overpass API 0.7.62.11 87bfad18",
+  "osm3s": {
+    "timestamp_osm_base": "2026-09-15T06:33:57Z",
+    "copyright": "The data included in this document is from www.openstreetmap.org. The data is made available under ODbL."
+  },
+  "elements": [
+
+{
+  "type": "node",
+  "id": 1270803134,
+  "lat": 43.2166740,
+  "lon": 27.9238310,
+  "tags": {
+    "amenity": "kindergarten"
+  }
+},
+{
+  "type": "node",
+  "id": 2051580681,
+  "lat": 43.2460624,
+  "lon": 27.9799515,
+  "tags": {
+    "amenity": "school",
+    "name": "ОУ ,,Панайот Волов\"",
+    "website": "https://www.oupvolov.com/",
+    "wikidata": "Q106347526"
+  }
+},
+{
+  "type": "node",
+  "id": 2626936395,
+  "lat": 43.2055643,
+  "lon": 27.9216827,
+  "tags": {
+    "addr:city": "Варна",
+    "addr:country": "BG",
+    "addr:housenumber": "10",
+    "addr:postcode": "9000",
+    "addr:street": "Баба Рада",
+    "amenity": "school",
+    "check_date": "2024-08-16",
+    "int_name": "Maestro",
+    "name": "Маестро",
+    "name:en": "Maestro",
+    "phone": "+359 52 620 547",
+    "website": "http://www.maestrovarna.com/"
+  }
+},
+{
+  "type": "node",
+  "id": 4012726005,
+  "lat": 43.2373556,
+  "lon": 27.8730868,
+  "tags": {
+    "addr:city": "Варна",
+    "addr:housenumber": "8",
+    "addr:postcode": "9020",
+    "addr:street": "Иван Кацарски",
+    "amenity": "kindergarten",
+    "name": "Частна детска занималня Цвети",
+    "phone": "+359 89 544 2777"
+  }
+},
+{
+  "type": "node",
+  "id": 4193665810,
+  "lat": 43.2043790,
+  "lon": 27.9143764,
+  "tags": {
+    "addr:housenumber": "18",
+    "addr:street": "Шейново",
+    "amenity": "kindergarten",
+    "check_date": "2024-08-29",
+    "internet_access": "no",
+    "name": "Теменужка",
+    "name:en": "Temenuzhka",
+    "opening_hours": "Mo-Fr 07:00-19:00; Sa-Su,PH off",
+    "payment:cards": "no",
+    "payment:cash": "yes",
+    "payment:credit_cards": "no",
+    "payment:debit_cards": "no",
+    "wheelchair": "no"
+  }
+},
+{
+  "type": "node",
+  "id": 4193667180,
+  "lat": 43.2067466,
+  "lon": 27.9245071,
+  "tags": {
+    "amenity": "kindergarten",
+    "description": "детска ясла",
+    "name": "Щастливо детсво",
+    "name:bg": "Щастливо детсво",
+    "name:en": "Shtastlivo detstvo"
+  }
+},
+{
+  "type": "node",
+  "id": 4860112348,
+  "lat": 43.2033442,
+  "lon": 27.9148809,
+  "tags": {
+    "addr:city": "Варна",
+    "addr:housenumber": "1",
+    "addr:postcode": "9000",
+    "addr:street": "Шейново",
+    "amenity": "school",
+    "name": "Езиков център „Ориндж хаус“",
+    "name:en": "Language Center \"Orange House\"",
+    "phone": "+359 52 650 052",
+    "website": "https://orangehousevarna.com/"
+  }
+},
+{
+  "type": "node",
+  "id": 4936781524,
+  "lat": 43.2579853,
+  "lon": 28.0274247,
+  "tags": {
+    "amenity": "school",
+    "name:tr": "Varna free üniversite"
+  }
+},
+{
+  "type": "node",
+  "id": 4973443624,
+  "lat": 43.2170799,
+  "lon": 27.9393861,
+  "tags": {
+    "addr:city": "Варна",
+    "addr:street": "Алея Акад. Никола Обрешков",
+    "amenity": "school",
+    "contact:phone": "+359 52 301 897;+359 52 301 838;+359 52 301 895",
+    "email": "zstoianow@mail.bg",
+    "name": "ОУ \"Захари Стоянов\"",
+    "name:bg": "Основно училище „Захари Стоянов“",
+    "name:en": "OU \"Zahari Stoyanov\"",
+    "website": "https://www.ou-zaharistoyanov.com/",
+    "wikidata": "Q106329171"
+  }
+},
+{
+  "type": "node",
+  "id": 4998337077,
+  "lat": 43.2170730,
+  "lon": 27.9385496,
+  "tags": {
+    "addr:city": "Варна",
+    "addr:street": "Алея Акад. Никола Обрешков",
+    "amenity": "school",
+    "contact:phone": "+359 52 302 106",
+    "email": "mg.varna@mgberon.com",
+    "name": "Математическа гимназия „Доктор Петър Берон“",
+    "name:en": "High school of Mathematics \"Doctor Peter Beron\"",
+    "website": "https://mgberon.com"
+  }
+},
+{
+  "type": "node",
+  "id": 6812644367,
+  "lat": 43.2031982,
+  "lon": 27.9199566,
+  "tags": {
+    "addr:city": "Варна",
+    "addr:housenumber": "19",
+    "addr:postcode": "9000",
+    "addr:street": "Михаил Колони",
+    "amenity": "childcare",
+    "contact:facebook": "100080372243102",
+    "email": "graziella@abv.bg",
+    "mobile": "+359 883 443 808",
+    "name": "На игра - Академия за развитие на детските ресурси",
+    "opening_hours": "Sa-Su",
+    "phone": "+359 89 696 3135",
+    "website": "https://naigra.eu/",
+    "wheelchair": "no"
+  }
+},
+{
+  "type": "node",
+  "id": 6813010368,
+  "lat": 43.2030603,
+  "lon": 27.9192837,
+  "tags": {
+    "amenity": "childcare",
+    "name": "Занималня \"Наш свят\"",
+    "website": "https://www.moreto.net/ads.php?n=603146&c=44"
+  }
+},
+{
+  "type": "node",
+  "id": 6813010370,
+  "lat": 43.2034005,
+  "lon": 27.9197002,
+  "tags": {
+    "amenity": "childcare",
+    "name": "Занималня \"Буратино\""
+  }
+},
+{
+  "type": "node",
+  "id": 6813010371,
+  "lat": 43.2035124,
+  "lon": 27.9183090,
+  "tags": {
+    "addr:city": "Варна",
+    "addr:housenumber": "11",
+    "addr:postcode": "9000",
+    "addr:street": "Михаил Колони",
+    "amenity": "childcare",
+    "name": "Занималня \"Матилда\"",
+    "phone": "+359 88 532 1564",
+    "website": "https://www.zanimalnia-matilda.com"
+  }
+},
+{
+  "type": "node",
+  "id": 6814682723,
+  "lat": 43.2030160,
+  "lon": 27.9191996,
+  "tags": {
+    "amenity": "school",
+    "name": "Първа частна търговска гимназия",
+    "website": "https://www.tradescl.com/",
+    "wikidata": "Q106349898"
+  }
+},
+{
+  "type": "node",
+  "id": 9088135696,
+  "lat": 43.2128301,
+  "lon": 27.9479464,
+  "tags": {
+    "amenity": "kindergarten",
+    "name": "20 Логопедична ЦДГ"
+  }
+},
+{
+  "type": "node",
+  "id": 9172120971,
+  "lat": 43.2117239,
+  "lon": 27.9076659,
+  "tags": {
+    "addr:city": "Варна",
+    "addr:housenumber": "80",
+    "addr:street": "бул. Владислав Варненчик",
+    "amenity": "school",
+    "grades": "1-7",
+    "name": "ОУ \"П. Р. Славейков\"",
+    "wikidata": "Q61138204"
+  }
+},
+{
+  "type": "node",
+  "id": 9172120972,
+  "lat": 43.2118192,
+  "lon": 27.9077944,
+  "tags": {
+    "addr:city": "Варна",
+    "addr:housenumber": "80",
+    "addr:street": "бул. Владислав Варненчик",
+    "amenity": "school",
+    "grades": "8-12",
+    "name": "ПМГ \"Акад. Методи Попов\"",
+    "wikidata": "Q106349702"
+  }
+},
+{
+  "type": "node",
+  "id": 9419140954,
+  "lat": 43.2125441,
+  "lon": 27.9318219,
+  "tags": {
+    "amenity": "school",
+    "name": "Частна профилирана гимназия \"Антонан дьо Сент-Екзюпери\""
+  }
+},
+{
+  "type": "node",
+  "id": 9664925196,
+  "lat": 43.2156941,
+  "lon": 27.9471979,
+  "tags": {
+    "amenity": "kindergarten",
+    "name": "занималня към ОУ «Г. С. Раковски»"
+  }
+},
+{
+  "type": "node",
+  "id": 10038221115,
+  "lat": 43.1104989,
+  "lon": 27.8281228,
+  "tags": {
+    "amenity": "school",
+    "grades": "1-7",
+    "name": "ОУ «Доктор Петър Берон»"
+  }
+},
+{
+  "type": "node",
+  "id": 10074201475,
+  "lat": 43.1129018,
+  "lon": 27.8279635,
+  "tags": {
+    "amenity": "kindergarten"
+  }
+},
+{
+  "type": "node",
+  "id": 10093882422,
+  "lat": 43.2133906,
+  "lon": 27.8856339,
+  "tags": {
+    "amenity": "school",
+    "name": "ОУ Отец Паисий",
+    "wikidata": "Q106347893"
+  }
+},
+{
+  "type": "node",
+  "id": 10127222505,
+  "lat": 43.2079407,
+  "lon": 27.8983793,
+  "tags": {
+    "amenity": "kindergarten",
+    "name": "Частна детска градина Мелита"
+  }
+},
+{
+  "type": "node",
+  "id": 10156076459,
+  "lat": 43.2186664,
+  "lon": 27.8871550,
+  "tags": {
+    "amenity": "childcare",
+    "name": "5 ДЯ Чуден свят"
+  }
+},
+{
+  "type": "node",
+  "id": 10177393137,
+  "lat": 43.2208025,
+  "lon": 27.9012048,
+  "tags": {
+    "amenity": "school",
+    "check_date": "2025-07-26",
+    "name": "Професионална Техническа Гимназия"
+  }
+},
+{
+  "type": "node",
+  "id": 10177393138,
+  "lat": 43.2209121,
+  "lon": 27.9002671,
+  "tags": {
+    "amenity": "school",
+    "check_date": "2025-07-28",
+    "name": "Професионална Техническа Гимназия"
+  }
+},
+{
+  "type": "node",
+  "id": 10177458552,
+  "lat": 43.2256277,
+  "lon": 27.8982909,
+  "tags": {
+    "amenity": "kindergarten",
+    "name": "27 ДГ Успех"
+  }
+},
+{
+  "type": "node",
+  "id": 11044588375,
+  "lat": 43.2240563,
+  "lon": 27.9381173,
+  "tags": {
+    "amenity": "school",
+    "name": "ПГ по Компютърно Моделиране и Компютърни Системи \"Акад. Благовест Сендов\""
+  }
+},
+{
+  "type": "node",
+  "id": 11437811547,
+  "lat": 43.2228921,
+  "lon": 27.9370871,
+  "tags": {
+    "amenity": "school",
+    "name": "Професионалната гимназия по компютърно моделиране и компютърни системи „акд. Благовест Сендов“"
+  }
+},
+{
+  "type": "node",
+  "id": 12110550239,
+  "lat": 43.2135721,
+  "lon": 27.9063850,
+  "tags": {
+    "amenity": "kindergarten",
+    "name": "Цветни песъчинки"
+  }
+},
+{
+  "type": "node",
+  "id": 14000440001,
+  "lat": 43.2231971,
+  "lon": 27.8817739,
+  "tags": {
+    "addr:housenumber": "3",
+    "addr:street": "Йордан Йовков",
+    "amenity": "kindergarten",
+    "contact:facebook": "100057069835647",
+    "email": "aniii_81@abv.bg",
+    "name": "Детска занималня “Чинтулов”",
+    "opening_hours": "Mo-Fr 07:30-18:30",
+    "phone": "+359 88 682 5956"
+  }
+},
+{
+  "type": "node",
+  "id": 14006219083,
+  "lat": 43.2246444,
+  "lon": 27.9374745,
+  "tags": {
+    "amenity": "school",
+    "education": "school",
+    "name": "ЧОУ \"Феникс 2020\""
+  }
+},
+{
+  "type": "way",
+  "id": 38343010,
+  "center": {
+    "lat": 43.2248170,
+    "lon": 27.9278272
+  },
+  "tags": {
+    "amenity": "school",
+    "name": "ОУ Черноризец Храбър",
+    "old_name": "Жечка Карамфилова"
+  }
+},
+{
+  "type": "way",
+  "id": 41727063,
+  "center": {
+    "lat": 43.2124812,
+    "lon": 27.9287167
+  },
+  "tags": {
+    "amenity": "school",
+    "name": "ОУ Васил Друмев",
+    "name:en": "Vasil Drumev Primary School",
+    "wikidata": "Q106329178"
+  }
+},
+{
+  "type": "way",
+  "id": 42501497,
+  "center": {
+    "lat": 43.2086893,
+    "lon": 27.9012008
+  },
+  "tags": {
+    "amenity": "school",
+    "name": "ОУ \"Константин Арабаджиев\"",
+    "wikidata": "Q106329219"
+  }
+},
+{
+  "type": "way",
+  "id": 42585236,
+  "center": {
+    "lat": 43.2172106,
+    "lon": 27.9344979
+  },
+  "tags": {
+    "amenity": "kindergarten",
+    "name": "4 ОДЗ Чайка",
+    "wikidata": "Q121080970"
+  }
+},
+{
+  "type": "way",
+  "id": 42585237,
+  "center": {
+    "lat": 43.2166316,
+    "lon": 27.9352538
+  },
+  "tags": {
+    "addr:city": "Варна",
+    "amenity": "school",
+    "name": "ОУ \"Г.С.Раковски\"",
+    "name:bg": "ГПЧЕ “Йоан Екзарх”",
+    "name:en": "Fifth language school",
+    "wheelchair": "yes",
+    "wikidata": "Q106329319"
+  }
+},
+{
+  "type": "way",
+  "id": 42681907,
+  "center": {
+    "lat": 43.2258607,
+    "lon": 27.9146985
+  },
+  "tags": {
+    "addr:city": "Варна",
+    "addr:country": "BG",
+    "addr:housenumber": "34",
+    "addr:postcode": "9015",
+    "addr:street": "Роза",
+    "amenity": "kindergarten",
+    "barrier": "fence",
+    "check_date": "2025-07-27",
+    "name": "Детска ясла № 7 \"Роза\"",
+    "wheelchair": "limited"
+  }
+},
+{
+  "type": "way",
+  "id": 42681916,
+  "center": {
+    "lat": 43.2243922,
+    "lon": 27.9169065
+  },
+  "tags": {
+    "addr:city": "Варна",
+    "addr:housenumber": "29",
+    "addr:postcode": "9010",
+    "addr:street": "Подвис",
+    "amenity": "school",
+    "barrier": "fence",
+    "email": "firstls@1eg.eu",
+    "grades": "8-12",
+    "name": "I ЕГ",
+    "name:en": "First Language School",
+    "phone": "+359 52 301 235;+359 52 303 785",
+    "website": "https://1eg.eu/",
+    "wikidata": "Q105996779"
+  }
+},
+{
+  "type": "way",
+  "id": 42681917,
+  "center": {
+    "lat": 43.2248182,
+    "lon": 27.9150177
+  },
+  "tags": {
+    "amenity": "school",
+    "barrier": "fence",
+    "check_date": "2025-07-26",
+    "name": "3 ОУ Ангел Кънчев",
+    "name:en": "Primary school Angel Kanchev"
+  }
+},
+{
+  "type": "way",
+  "id": 43055691,
+  "center": {
+    "lat": 43.2258777,
+    "lon": 27.8730066
+  },
+  "tags": {
+    "amenity": "kindergarten",
+    "name": "ДГ 24 \"Детско градче\""
+  }
+},
+{
+  "type": "way",
+  "id": 43084916,
+  "center": {
+    "lat": 43.2164320,
+    "lon": 27.9261594
+  },
+  "tags": {
+    "amenity": "school",
+    "name": "7 СОУ \"Найден Геров\"",
+    "wikidata": "Q106329097"
+  }
+},
+{
+  "type": "way",
+  "id": 43085542,
+  "center": {
+    "lat": 43.2209625,
+    "lon": 27.9011738
+  },
+  "tags": {
+    "amenity": "school",
+    "name": "Професионална Техническа Гимназия Варна"
+  }
+},
+{
+  "type": "way",
+  "id": 43085543,
+  "center": {
+    "lat": 43.2219464,
+    "lon": 27.9037669
+  },
+  "tags": {
+    "amenity": "school",
+    "check_date": "2026-07-12",
+    "name": "Професионална гимназия по електротехника"
+  }
+},
+{
+  "type": "way",
+  "id": 43371339,
+  "center": {
+    "lat": 43.2171854,
+    "lon": 27.9443256
+  },
+  "tags": {
+    "amenity": "school",
+    "name": "Спортно училище Георги Бенковски",
+    "wikidata": "Q106349433"
+  }
+},
+{
+  "type": "way",
+  "id": 47068791,
+  "center": {
+    "lat": 43.2309111,
+    "lon": 27.8808840
+  },
+  "tags": {
+    "amenity": "school",
+    "barrier": "fence",
+    "name": "СУ „Гео Милев“",
+    "operator": "Община Варна",
+    "operator:type": "public",
+    "operator:wikidata": "Q748965",
+    "ref:BG:neispuo": "400034",
+    "website": "https://www.geomilev.info/",
+    "wikidata": "Q106329259"
+  }
+},
+{
+  "type": "way",
+  "id": 56019247,
+  "center": {
+    "lat": 43.2140966,
+    "lon": 27.9116725
+  },
+  "tags": {
+    "amenity": "school",
+    "name": "ОУ \"Васил Априлов\"",
+    "wikidata": "Q106329329"
+  }
+},
+{
+  "type": "way",
+  "id": 56724563,
+  "center": {
+    "lat": 43.2253783,
+    "lon": 27.9257395
+  },
+  "tags": {
+    "addr:street": "Дубровник",
+    "amenity": "kindergarten",
+    "name": "ОДГ №14 \"Дружба\""
+  }
+},
+{
+  "type": "way",
+  "id": 59465955,
+  "center": {
+    "lat": 43.2176022,
+    "lon": 27.9384264
+  },
+  "tags": {
+    "addr:city": "Варна",
+    "amenity": "kindergarten",
+    "barrier": "fence",
+    "fence_type": "metal",
+    "name": "Калина Малина",
+    "wikidata": "Q121080999"
+  }
+},
+{
+  "type": "way",
+  "id": 93373842,
+  "center": {
+    "lat": 43.2107309,
+    "lon": 27.9146677
+  },
+  "tags": {
+    "addr:housenumber": "12",
+    "addr:postcode": "9000",
+    "addr:street": "Проф. Николай Державин",
+    "amenity": "school",
+    "name": "8 СОУПЧЕ",
+    "name:ru": "СУЕО „А.С. Пушкин“",
+    "phone": "+359 52 609 696",
+    "website": "http://sueovarna.com",
+    "wikidata": "Q106329108"
+  }
+},
+{
+  "type": "way",
+  "id": 97199616,
+  "center": {
+    "lat": 43.2252364,
+    "lon": 27.9213255
+  },
+  "tags": {
+    "amenity": "kindergarten",
+    "name": "Дневен център за деца и младежи с увреждания \"Св. Йоан Златоуст\""
+  }
+},
+{
+  "type": "way",
+  "id": 97199617,
+  "center": {
+    "lat": 43.2252268,
+    "lon": 27.9198955
+  },
+  "tags": {
+    "amenity": "kindergarten",
+    "name": "ЦДГ Незабравка",
+    "wikidata": "Q121081006"
+  }
+},
+{
+  "type": "way",
+  "id": 97770830,
+  "center": {
+    "lat": 43.2161874,
+    "lon": 27.9071219
+  },
+  "tags": {
+    "addr:housenumber": "8",
+    "addr:street": "Екатерина Симитчиева",
+    "amenity": "school",
+    "name": "ОУ Йордан Йовков",
+    "wikidata": "Q106329134"
+  }
+},
+{
+  "type": "way",
+  "id": 98361292,
+  "center": {
+    "lat": 43.2086378,
+    "lon": 27.8970215
+  },
+  "tags": {
+    "amenity": "kindergarten",
+    "barrier": "fence",
+    "name": "ЦДГ 8 - Христо Ботев"
+  }
+},
+{
+  "type": "way",
+  "id": 111567261,
+  "center": {
+    "lat": 43.2221361,
+    "lon": 27.9324515
+  },
+  "tags": {
+    "amenity": "kindergarten",
+    "name": "ЦДГ 15 \"Гълъбче\""
+  }
+},
+{
+  "type": "way",
+  "id": 111567509,
+  "center": {
+    "lat": 43.2225504,
+    "lon": 27.9334641
+  },
+  "tags": {
+    "amenity": "kindergarten"
+  }
+},
+{
+  "type": "way",
+  "id": 121592236,
+  "center": {
+    "lat": 43.2077789,
+    "lon": 27.8962763
+  },
+  "tags": {
+    "amenity": "school",
+    "barrier": "fence",
+    "name": "СУ \"Елин Пелин\"",
+    "wikidata": "Q106346468"
+  }
+},
+{
+  "type": "way",
+  "id": 134563530,
+  "center": {
+    "lat": 43.2572451,
+    "lon": 27.8209997
+  },
+  "tags": {
+    "amenity": "school"
+  }
+},
+{
+  "type": "way",
+  "id": 134683308,
+  "center": {
+    "lat": 43.2608810,
+    "lon": 27.8111308
+  },
+  "tags": {
+    "amenity": "school"
+  }
+},
+{
+  "type": "way",
+  "id": 134800713,
+  "center": {
+    "lat": 43.2512999,
+    "lon": 27.8239070
+  },
+  "tags": {
+    "amenity": "kindergarten",
+    "name": "ДГ Детство мое"
+  }
+},
+{
+  "type": "way",
+  "id": 135166711,
+  "center": {
+    "lat": 43.2533747,
+    "lon": 27.7737156
+  },
+  "tags": {
+    "amenity": "school"
+  }
+},
+{
+  "type": "way",
+  "id": 144813303,
+  "center": {
+    "lat": 43.2955511,
+    "lon": 27.7682852
+  },
+  "tags": {
+    "amenity": "school",
+    "name": "ОУ \"Св. Климент Охридски\""
+  }
+},
+{
+  "type": "way",
+  "id": 147428127,
+  "center": {
+    "lat": 43.2961152,
+    "lon": 27.8542860
+  },
+  "tags": {
+    "amenity": "school",
+    "name": "Основно училище \"Христо Смирненски\""
+  }
+},
+{
+  "type": "way",
+  "id": 147429585,
+  "center": {
+    "lat": 43.2955346,
+    "lon": 27.8548612
+  },
+  "tags": {
+    "amenity": "kindergarten",
+    "name": "Детска градина"
+  }
+},
+{
+  "type": "way",
+  "id": 151903790,
+  "center": {
+    "lat": 43.2179115,
+    "lon": 27.8240195
+  },
+  "tags": {
+    "amenity": "school",
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 175325289,
+  "center": {
+    "lat": 43.2466263,
+    "lon": 27.9023415
+  },
+  "tags": {
+    "amenity": "school"
+  }
+},
+{
+  "type": "way",
+  "id": 175325292,
+  "center": {
+    "lat": 43.2455968,
+    "lon": 27.9019323
+  },
+  "tags": {
+    "amenity": "kindergarten"
+  }
+},
+{
+  "type": "way",
+  "id": 180208256,
+  "center": {
+    "lat": 43.2522972,
+    "lon": 27.7740629
+  },
+  "tags": {
+    "amenity": "kindergarten"
+  }
+},
+{
+  "type": "way",
+  "id": 180211723,
+  "center": {
+    "lat": 43.2951718,
+    "lon": 27.7709179
+  },
+  "tags": {
+    "amenity": "kindergarten",
+    "name": "ЦДГ \"Детелина\""
+  }
+},
+{
+  "type": "way",
+  "id": 184565010,
+  "center": {
+    "lat": 43.2188474,
+    "lon": 27.9517023
+  },
+  "tags": {
+    "amenity": "school",
+    "barrier": "fence",
+    "fence_type": "wire",
+    "name": "IV ЕГ Жолио Кюри",
+    "name:en": "IV-th Language Highschool \"Frederic Joliot - Curie\"",
+    "website": "http://www.4egvarna.com/en/index.php"
+  }
+},
+{
+  "type": "way",
+  "id": 184566204,
+  "center": {
+    "lat": 43.2188102,
+    "lon": 27.9538144
+  },
+  "tags": {
+    "amenity": "school",
+    "building": "yes",
+    "name": "Професионална гимназия по химични и хранително-вкусови технологии \"Д. И. Менделеев\"",
+    "website": "https://pghhvt-varna.com"
+  }
+},
+{
+  "type": "way",
+  "id": 185741013,
+  "center": {
+    "lat": 43.2182270,
+    "lon": 27.9214230
+  },
+  "tags": {
+    "amenity": "kindergarten",
+    "name": "Слънчева дъга",
+    "wikidata": "Q121081042"
+  }
+},
+{
+  "type": "way",
+  "id": 188391223,
+  "center": {
+    "lat": 43.2176079,
+    "lon": 27.8242490
+  },
+  "tags": {
+    "amenity": "school",
+    "name": "ОУ Христо Смирненски",
+    "wikidata": "Q106347252"
+  }
+},
+{
+  "type": "way",
+  "id": 188745981,
+  "center": {
+    "lat": 43.2213780,
+    "lon": 27.8183613
+  },
+  "tags": {
+    "amenity": "kindergarten",
+    "name": "ОДЗ ”Ран Босилек”"
+  }
+},
+{
+  "type": "way",
+  "id": 199476940,
+  "center": {
+    "lat": 43.2288755,
+    "lon": 28.0071244
+  },
+  "tags": {
+    "amenity": "school",
+    "name": "Международното Френско училище във Варна"
+  }
+},
+{
+  "type": "way",
+  "id": 210540231,
+  "center": {
+    "lat": 43.2159659,
+    "lon": 27.9146038
+  },
+  "tags": {
+    "amenity": "kindergarten",
+    "name": "Ян Бибиян",
+    "wikidata": "Q121081007"
+  }
+},
+{
+  "type": "way",
+  "id": 213542303,
+  "center": {
+    "lat": 43.2280808,
+    "lon": 27.8721547
+  },
+  "tags": {
+    "amenity": "school",
+    "building": "yes",
+    "name": "ПГ по строителство, архитектура и геодезия \"Васил Левски\"",
+    "wikidata": "Q106349523"
+  }
+},
+{
+  "type": "way",
+  "id": 213542304,
+  "center": {
+    "lat": 43.2280718,
+    "lon": 27.8727472
+  },
+  "tags": {
+    "amenity": "school",
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 213542305,
+  "center": {
+    "lat": 43.2278424,
+    "lon": 27.8729600
+  },
+  "tags": {
+    "amenity": "school",
+    "building": "yes",
+    "name": "ПГ по сградостроителство \"Кольо Фичето\""
+  }
+},
+{
+  "type": "way",
+  "id": 218443223,
+  "center": {
+    "lat": 43.2436607,
+    "lon": 27.8547200
+  },
+  "tags": {
+    "amenity": "school",
+    "barrier": "wall",
+    "name": "ОУ Патриарх Евтимий"
+  }
+},
+{
+  "type": "way",
+  "id": 231899856,
+  "center": {
+    "lat": 43.2117762,
+    "lon": 27.9024361
+  },
+  "tags": {
+    "amenity": "school",
+    "name": "ОУ \"Цар Симеон I\"",
+    "wikidata": "Q106347237"
+  }
+},
+{
+  "type": "way",
+  "id": 250831251,
+  "center": {
+    "lat": 43.1626447,
+    "lon": 27.9380255
+  },
+  "tags": {
+    "amenity": "school",
+    "name": "ОУ Капитан Петко Войвода",
+    "wikidata": "Q106346412"
+  }
+},
+{
+  "type": "way",
+  "id": 261731072,
+  "center": {
+    "lat": 43.2326381,
+    "lon": 28.0029372
+  },
+  "tags": {
+    "amenity": "school",
+    "name": "бивше ОУ „Д-р Никола Димитров“",
+    "wheelchair": "no"
+  }
+},
+{
+  "type": "way",
+  "id": 378290747,
+  "center": {
+    "lat": 43.2369697,
+    "lon": 27.8805440
+  },
+  "tags": {
+    "amenity": "childcare",
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 384408986,
+  "center": {
+    "lat": 43.1740810,
+    "lon": 27.9042625
+  },
+  "tags": {
+    "amenity": "school",
+    "name": "СУУНЗ Проф. д-р Иван Шишманов",
+    "wikidata": "Q125895390",
+    "wikipedia": "bg:Специално училище за ученици с нарушено зрение „Проф. д-р Иван Шишманов“"
+  }
+},
+{
+  "type": "way",
+  "id": 384416430,
+  "center": {
+    "lat": 43.1828905,
+    "lon": 27.8925786
+  },
+  "tags": {
+    "amenity": "school",
+    "name": "СОУ Любен Каравелов"
+  }
+},
+{
+  "type": "way",
+  "id": 384416433,
+  "center": {
+    "lat": 43.1853437,
+    "lon": 27.8890762
+  },
+  "tags": {
+    "amenity": "kindergarten",
+    "name": "ДГ №45 Морски свят"
+  }
+},
+{
+  "type": "way",
+  "id": 384416449,
+  "center": {
+    "lat": 43.1812439,
+    "lon": 27.8973521
+  },
+  "tags": {
+    "amenity": "school",
+    "name": "ОУ Христо Ботев",
+    "wikidata": "Q106346230"
+  }
+},
+{
+  "type": "way",
+  "id": 436474179,
+  "center": {
+    "lat": 43.2375012,
+    "lon": 27.8616237
+  },
+  "tags": {
+    "amenity": "school",
+    "check_date": "2025-04-21",
+    "name": "ОУ Стоян Михайловски",
+    "name:en": "OU Stoyan Mihailovski"
+  }
+},
+{
+  "type": "way",
+  "id": 442749290,
+  "center": {
+    "lat": 43.2217641,
+    "lon": 27.9111659
+  },
+  "tags": {
+    "amenity": "kindergarten",
+    "check_date": "2024-09-05",
+    "name": "28 ЦДГ Карамфилче"
+  }
+},
+{
+  "type": "way",
+  "id": 446606570,
+  "center": {
+    "lat": 43.2139947,
+    "lon": 27.9041221
+  },
+  "tags": {
+    "amenity": "kindergarten",
+    "check_date": "2024-08-21",
+    "name": "ДГ 5 \"Слънчо\"",
+    "wikidata": "Q121080988"
+  }
+},
+{
+  "type": "way",
+  "id": 453837093,
+  "center": {
+    "lat": 43.2240880,
+    "lon": 27.8815777
+  },
+  "tags": {
+    "amenity": "school",
+    "barrier": "fence",
+    "name": "ОУ Добри Чинтулов",
+    "name:en": "OU Dobri Chintulov",
+    "wikidata": "Q106347288"
+  }
+},
+{
+  "type": "way",
+  "id": 491361274,
+  "center": {
+    "lat": 43.2073954,
+    "lon": 27.9193722
+  },
+  "tags": {
+    "amenity": "school",
+    "building": "school",
+    "name": "ОУ \"Св.св.Кирил и Методий\"",
+    "name:en": "St. Cyril And St. Method"
+  }
+},
+{
+  "type": "way",
+  "id": 494681188,
+  "center": {
+    "lat": 43.2020234,
+    "lon": 27.9130233
+  },
+  "tags": {
+    "addr:housenumber": "14",
+    "addr:street": "Цар Симеон I",
+    "amenity": "kindergarten",
+    "building": "yes",
+    "check_date": "2024-06-28",
+    "name": "ДГ-4 \"Теменужка\" Филиал 1",
+    "start_date": "13-10-2010"
+  }
+},
+{
+  "type": "way",
+  "id": 504088909,
+  "center": {
+    "lat": 43.1105617,
+    "lon": 27.8280124
+  },
+  "tags": {
+    "amenity": "school"
+  }
+},
+{
+  "type": "way",
+  "id": 510627142,
+  "center": {
+    "lat": 43.2000532,
+    "lon": 27.9193428
+  },
+  "tags": {
+    "amenity": "kindergarten",
+    "building": "yes",
+    "check_date": "2024-02-19",
+    "name": "ЦДГ Пушкин (филиал)",
+    "name:en": "CDG Pushkin (Filial)"
+  }
+},
+{
+  "type": "way",
+  "id": 568725806,
+  "center": {
+    "lat": 43.2087291,
+    "lon": 27.9109154
+  },
+  "tags": {
+    "amenity": "school",
+    "barrier": "fence",
+    "name": "Хуманитарна гимназия \"Константин Преславски\"",
+    "wikidata": "Q12287908"
+  }
+},
+{
+  "type": "way",
+  "id": 575091477,
+  "center": {
+    "lat": 43.2164248,
+    "lon": 27.9444096
+  },
+  "tags": {
+    "amenity": "kindergarten",
+    "education": "kindergarten",
+    "name": "Детска Ясла №2 \"Моряче\""
+  }
+},
+{
+  "type": "way",
+  "id": 584382039,
+  "center": {
+    "lat": 43.2367637,
+    "lon": 27.8847253
+  },
+  "tags": {
+    "amenity": "school",
+    "barrier": "fence",
+    "check_date": "2026-09-05",
+    "name": "2 ОУ Никола Вапцаров"
+  }
+},
+{
+  "type": "way",
+  "id": 599927177,
+  "center": {
+    "lat": 43.1653199,
+    "lon": 27.9355824
+  },
+  "tags": {
+    "amenity": "kindergarten",
+    "name": "ОДЗ Люляче"
+  }
+},
+{
+  "type": "way",
+  "id": 600374573,
+  "center": {
+    "lat": 43.1817810,
+    "lon": 27.8943820
+  },
+  "tags": {
+    "amenity": "kindergarten",
+    "name": "9. Детска ясла Детелина"
+  }
+},
+{
+  "type": "way",
+  "id": 600378433,
+  "center": {
+    "lat": 43.1767195,
+    "lon": 27.9025379
+  },
+  "tags": {
+    "amenity": "kindergarten",
+    "name": "46 ДГ Горска приказка"
+  }
+},
+{
+  "type": "way",
+  "id": 600378437,
+  "center": {
+    "lat": 43.1756105,
+    "lon": 27.9062753
+  },
+  "tags": {
+    "amenity": "school",
+    "name": "ПГ по текстил и моден дизайн"
+  }
+},
+{
+  "type": "way",
+  "id": 600574160,
+  "center": {
+    "lat": 43.1815156,
+    "lon": 27.9013083
+  },
+  "tags": {
+    "amenity": "kindergarten",
+    "name": "ДГ В.Терешкова"
+  }
+},
+{
+  "type": "way",
+  "id": 601553666,
+  "center": {
+    "lat": 43.1796338,
+    "lon": 27.8912161
+  },
+  "tags": {
+    "amenity": "school",
+    "name": "НУ Васил Левски",
+    "wikidata": "Q106347448"
+  }
+},
+{
+  "type": "way",
+  "id": 601612254,
+  "center": {
+    "lat": 43.1829563,
+    "lon": 27.8960042
+  },
+  "tags": {
+    "amenity": "kindergarten",
+    "name": "ЦДГ 43 \"Пинокио\""
+  }
+},
+{
+  "type": "way",
+  "id": 618976503,
+  "center": {
+    "lat": 43.2061165,
+    "lon": 27.9232208
+  },
+  "tags": {
+    "addr:city": "Варна",
+    "addr:housenumber": "34",
+    "addr:postcode": "9000",
+    "addr:street": "Стефан Караджа",
+    "amenity": "school",
+    "name": "Национално училище по изкуствата \"Добри Христов\"",
+    "name:en": "The National School of Arts \"Dobri Hristov\"- Varna",
+    "operator": "Министерство на културата",
+    "website": "https://www.artschool-varna.com/",
+    "wikidata": "Q106329335"
+  }
+},
+{
+  "type": "way",
+  "id": 640991506,
+  "center": {
+    "lat": 43.2314604,
+    "lon": 27.8750553
+  },
+  "tags": {
+    "amenity": "school",
+    "barrier": "fence",
+    "name": "СУ Антон Страшимиров - ПГИ \"Д-р Иван Богоров\""
+  }
+},
+{
+  "type": "way",
+  "id": 640991507,
+  "center": {
+    "lat": 43.2305307,
+    "lon": 27.8752594
+  },
+  "tags": {
+    "amenity": "kindergarten",
+    "barrier": "fence",
+    "name": "ДГ 30 \"Синчец\"",
+    "wikidata": "Q121081011"
+  }
+},
+{
+  "type": "way",
+  "id": 640991508,
+  "center": {
+    "lat": 43.2364409,
+    "lon": 27.8732223
+  },
+  "tags": {
+    "amenity": "kindergarten",
+    "barrier": "fence",
+    "name": "ДГ №34 „Лястовичка“"
+  }
+},
+{
+  "type": "way",
+  "id": 640997360,
+  "center": {
+    "lat": 43.2385737,
+    "lon": 27.8605227
+  },
+  "tags": {
+    "amenity": "kindergarten",
+    "check_date": "2025-04-21",
+    "name": "ДГ 39 \"Приказка\""
+  }
+},
+{
+  "type": "way",
+  "id": 641000008,
+  "center": {
+    "lat": 43.2368606,
+    "lon": 27.8807069
+  },
+  "tags": {
+    "addr:city": "Варна",
+    "addr:street": "бул. Република",
+    "amenity": "kindergarten",
+    "barrier": "fence",
+    "description": "Детска градина №33 „Делфинче“ /с яслена група/",
+    "email": "delfin4e2009@abv.bg",
+    "fixme": "phone",
+    "name": "ДГ 33 „Делфинче“",
+    "phone": "+359 52 505 553"
+  }
+},
+{
+  "type": "way",
+  "id": 641002145,
+  "center": {
+    "lat": 43.2358460,
+    "lon": 27.8865107
+  },
+  "tags": {
+    "amenity": "kindergarten",
+    "barrier": "fence",
+    "name": "ДГ 31 \"Крилатко\""
+  }
+},
+{
+  "type": "way",
+  "id": 641002245,
+  "center": {
+    "lat": 43.2348219,
+    "lon": 27.8917440
+  },
+  "tags": {
+    "addr:city": "Варна",
+    "amenity": "kindergarten",
+    "name": "ДГ 29 \"Звънче\""
+  }
+},
+{
+  "type": "way",
+  "id": 641002630,
+  "center": {
+    "lat": 43.2317971,
+    "lon": 27.8734464
+  },
+  "tags": {
+    "amenity": "kindergarten",
+    "barrier": "fence",
+    "name": "ДГ 36 \"Морска звездица\"",
+    "wikidata": "Q121080979"
+  }
+},
+{
+  "type": "way",
+  "id": 641003781,
+  "center": {
+    "lat": 43.2300683,
+    "lon": 27.8864136
+  },
+  "tags": {
+    "amenity": "kindergarten",
+    "barrier": "fence",
+    "name": "ДГ 32 \"Моряче\""
+  }
+},
+{
+  "type": "way",
+  "id": 641003782,
+  "center": {
+    "lat": 43.2299685,
+    "lon": 27.8873334
+  },
+  "tags": {
+    "amenity": "kindergarten",
+    "barrier": "fence",
+    "name": "13 Детска ясла \"Русалка\"",
+    "name:en": "\"Rusalka\" Kindergarten"
+  }
+},
+{
+  "type": "way",
+  "id": 641003783,
+  "center": {
+    "lat": 43.2307663,
+    "lon": 27.8868354
+  },
+  "tags": {
+    "amenity": "school",
+    "barrier": "fence",
+    "name": "СОУ Неофит Бозвели",
+    "name:en": "SOU Neofit Bozveli"
+  }
+},
+{
+  "type": "way",
+  "id": 641007346,
+  "center": {
+    "lat": 43.2236748,
+    "lon": 27.8831713
+  },
+  "tags": {
+    "amenity": "kindergarten",
+    "barrier": "fence",
+    "name": "ДГ 28 \"Пролет\""
+  }
+},
+{
+  "type": "way",
+  "id": 641007774,
+  "center": {
+    "lat": 43.2260242,
+    "lon": 27.8843018
+  },
+  "tags": {
+    "amenity": "kindergarten",
+    "barrier": "fence",
+    "check_date": "2024-07-15",
+    "name": "11 Детска ясла \"Иглика\""
+  }
+},
+{
+  "type": "way",
+  "id": 641008036,
+  "center": {
+    "lat": 43.2260890,
+    "lon": 27.8843963
+  },
+  "tags": {
+    "amenity": "kindergarten",
+    "building": "yes",
+    "name": "Детска ясла \"Иглика\" 11"
+  }
+},
+{
+  "type": "way",
+  "id": 641012257,
+  "center": {
+    "lat": 43.2279867,
+    "lon": 27.8723296
+  },
+  "tags": {
+    "amenity": "school"
+  }
+},
+{
+  "type": "way",
+  "id": 641038435,
+  "center": {
+    "lat": 43.2052698,
+    "lon": 27.9221028
+  },
+  "tags": {
+    "amenity": "kindergarten",
+    "check_date": "2025-09-20",
+    "name": "ДГ 7 \"Ал.С. Пушкин\""
+  }
+},
+{
+  "type": "way",
+  "id": 655429904,
+  "center": {
+    "lat": 43.2025274,
+    "lon": 27.9105695
+  },
+  "tags": {
+    "amenity": "childcare",
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 684819839,
+  "center": {
+    "lat": 43.2287994,
+    "lon": 28.0099985
+  },
+  "tags": {
+    "amenity": "school",
+    "education": "school",
+    "name": "Международното Френско училище във Варна"
+  }
+},
+{
+  "type": "way",
+  "id": 702900008,
+  "center": {
+    "lat": 43.2095891,
+    "lon": 27.9268825
+  },
+  "tags": {
+    "amenity": "kindergarten",
+    "name": "ДГ Мир №13"
+  }
+},
+{
+  "type": "way",
+  "id": 713012965,
+  "center": {
+    "lat": 43.2029911,
+    "lon": 27.9182210
+  },
+  "tags": {
+    "amenity": "school",
+    "contact:website": "http://klimentvarna.hit.bg",
+    "name": "CОУ Св. Климент Охридски",
+    "name:en": "St. Kliment Ohridski",
+    "website": "https://klimentvarna.com"
+  }
+},
+{
+  "type": "way",
+  "id": 746942907,
+  "center": {
+    "lat": 43.2101998,
+    "lon": 27.9368525
+  },
+  "tags": {
+    "addr:housenumber": "41",
+    "addr:street": "6-та",
+    "amenity": "kindergarten",
+    "building": "kindergarten",
+    "building:levels": "3"
+  }
+},
+{
+  "type": "way",
+  "id": 784158433,
+  "center": {
+    "lat": 43.2477119,
+    "lon": 27.9852033
+  },
+  "tags": {
+    "amenity": "kindergarten",
+    "barrier": "fence",
+    "fence_type": "metal"
+  }
+},
+{
+  "type": "way",
+  "id": 829427563,
+  "center": {
+    "lat": 43.2178014,
+    "lon": 27.9273605
+  },
+  "tags": {
+    "amenity": "kindergarten",
+    "check_date": "2024-02-13",
+    "name": "Детска градина \"Жирафче\""
+  }
+},
+{
+  "type": "way",
+  "id": 860324796,
+  "center": {
+    "lat": 43.2125609,
+    "lon": 27.9085582
+  },
+  "tags": {
+    "amenity": "school"
+  }
+},
+{
+  "type": "way",
+  "id": 892717675,
+  "center": {
+    "lat": 43.2449435,
+    "lon": 27.9617743
+  },
+  "tags": {
+    "amenity": "childcare",
+    "name": "Детски Кът \"Шоколад\""
+  }
+},
+{
+  "type": "way",
+  "id": 900801921,
+  "center": {
+    "lat": 43.2133669,
+    "lon": 27.9002758
+  },
+  "tags": {
+    "amenity": "kindergarten",
+    "barrier": "fence",
+    "fence_type": "metal_bars",
+    "height": "1.5",
+    "material": "metal"
+  }
+},
+{
+  "type": "way",
+  "id": 918796008,
+  "center": {
+    "lat": 43.2163173,
+    "lon": 27.9455174
+  },
+  "tags": {
+    "amenity": "kindergarten",
+    "education": "kindergarten",
+    "name": "Оздравителна Детска Градина №9 \"Ален Мак\""
+  }
+},
+{
+  "type": "way",
+  "id": 962303386,
+  "center": {
+    "lat": 43.2180385,
+    "lon": 27.8892953
+  },
+  "tags": {
+    "amenity": "school",
+    "grades": "1-7",
+    "name": "ОУ \"Св. Иван Рилски\"",
+    "name:en": "Ivan Rilski Senior Highschool"
+  }
+},
+{
+  "type": "way",
+  "id": 988040303,
+  "center": {
+    "lat": 43.2343891,
+    "lon": 27.9168744
+  },
+  "tags": {
+    "amenity": "school",
+    "name": "ЧСУ Монтесори"
+  }
+},
+{
+  "type": "way",
+  "id": 988040304,
+  "center": {
+    "lat": 43.2350075,
+    "lon": 27.9171372
+  },
+  "tags": {
+    "amenity": "kindergarten",
+    "name": "ЧДГ Монтесори"
+  }
+},
+{
+  "type": "way",
+  "id": 1015929209,
+  "center": {
+    "lat": 43.2178199,
+    "lon": 27.9201901
+  },
+  "tags": {
+    "amenity": "kindergarten",
+    "check_date": "2024-09-06",
+    "name": "3 ЦДГ Ян Бибиян"
+  }
+},
+{
+  "type": "way",
+  "id": 1016660028,
+  "center": {
+    "lat": 43.2481694,
+    "lon": 27.8449628
+  },
+  "tags": {
+    "addr:city": "Варна",
+    "amenity": "school",
+    "name": "Алеко Константинов"
+  }
+},
+{
+  "type": "way",
+  "id": 1023515399,
+  "center": {
+    "lat": 43.2067329,
+    "lon": 27.9203950
+  },
+  "tags": {
+    "amenity": "school",
+    "name": "Варненска търговска гимназия Г.С.Раковски",
+    "wikidata": "Q106349697"
+  }
+},
+{
+  "type": "way",
+  "id": 1030591841,
+  "center": {
+    "lat": 43.2236228,
+    "lon": 27.8994357
+  },
+  "tags": {
+    "amenity": "school",
+    "grades": "8-12",
+    "name": "ПГСГД \"Николай Хайтов\""
+  }
+},
+{
+  "type": "way",
+  "id": 1031528162,
+  "center": {
+    "lat": 43.2446736,
+    "lon": 27.8541553
+  },
+  "tags": {
+    "amenity": "kindergarten"
+  }
+},
+{
+  "type": "way",
+  "id": 1036374281,
+  "center": {
+    "lat": 43.2059323,
+    "lon": 27.9037254
+  },
+  "tags": {
+    "amenity": "school",
+    "name": "ОУ \"Константин Арабаджиев\" - филиал",
+    "preschool": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 1036690985,
+  "center": {
+    "lat": 43.2103745,
+    "lon": 27.9293122
+  },
+  "tags": {
+    "amenity": "school",
+    "name": "Професионална гимназия по туризъм „Проф. Асен Златаров“"
+  }
+},
+{
+  "type": "way",
+  "id": 1036712585,
+  "center": {
+    "lat": 43.2135742,
+    "lon": 27.9246288
+  },
+  "tags": {
+    "amenity": "school",
+    "check_date": "2026-04-21",
+    "grades": "8-12",
+    "name": "Професионална Гимназия по Текстил и Моден Дизайн",
+    "wikidata": "Q106349877"
+  }
+},
+{
+  "type": "way",
+  "id": 1036717599,
+  "center": {
+    "lat": 43.2108581,
+    "lon": 27.9128655
+  },
+  "tags": {
+    "amenity": "kindergarten",
+    "name": "14 Детска ясла \"Звънче\""
+  }
+},
+{
+  "type": "way",
+  "id": 1036893002,
+  "center": {
+    "lat": 43.2053277,
+    "lon": 27.9048882
+  },
+  "tags": {
+    "amenity": "kindergarten",
+    "name": "Детска ясла (ДЯ) №3 „Зайо Байо“"
+  }
+},
+{
+  "type": "way",
+  "id": 1036893003,
+  "center": {
+    "lat": 43.2056700,
+    "lon": 27.9046862
+  },
+  "tags": {
+    "amenity": "kindergarten",
+    "name": "1 ЦДГ",
+    "wikidata": "Q121080985"
+  }
+},
+{
+  "type": "way",
+  "id": 1044160751,
+  "center": {
+    "lat": 43.2176618,
+    "lon": 27.9184082
+  },
+  "tags": {
+    "addr:city": "Варна",
+    "addr:housenumber": "11",
+    "addr:postcode": "9002",
+    "addr:street": "Братя Бъкстон",
+    "amenity": "school",
+    "name": "ОУ \"Стефан Караджа\""
+  }
+},
+{
+  "type": "way",
+  "id": 1049947295,
+  "center": {
+    "lat": 43.2431825,
+    "lon": 27.8455593
+  },
+  "tags": {
+    "amenity": "school",
+    "name": "Пейо Яворов",
+    "name:en": "Peyo Yavororv"
+  }
+},
+{
+  "type": "way",
+  "id": 1050419865,
+  "center": {
+    "lat": 43.2173007,
+    "lon": 27.9131422
+  },
+  "tags": {
+    "amenity": "school",
+    "name": "Средношколско общежитие \"Михаил Колони\""
+  }
+},
+{
+  "type": "way",
+  "id": 1053543208,
+  "center": {
+    "lat": 43.2105930,
+    "lon": 27.9104753
+  },
+  "tags": {
+    "addr:city": "Варна",
+    "addr:housenumber": "14",
+    "addr:postcode": "9000",
+    "addr:street": "Проф. Фредерик Жолио Кюри",
+    "amenity": "kindergarten",
+    "name": "13 ЦДГ Звездичка",
+    "phone": "+359 52 621 819",
+    "wikidata": "Q121080993"
+  }
+},
+{
+  "type": "way",
+  "id": 1063586495,
+  "center": {
+    "lat": 43.2040961,
+    "lon": 27.9077958
+  },
+  "tags": {
+    "amenity": "school",
+    "name": "Димчо Дебелянов",
+    "wikidata": "Q121081044"
+  }
+},
+{
+  "type": "way",
+  "id": 1065425789,
+  "center": {
+    "lat": 43.2315243,
+    "lon": 27.8825463
+  },
+  "tags": {
+    "amenity": "kindergarten",
+    "name": "ЦДГ Зрънчо"
+  }
+},
+{
+  "type": "way",
+  "id": 1101543511,
+  "center": {
+    "lat": 43.2239172,
+    "lon": 27.9026036
+  },
+  "tags": {
+    "amenity": "kindergarten",
+    "name": "35 ОДЗ Детска радост"
+  }
+},
+{
+  "type": "way",
+  "id": 1102299388,
+  "center": {
+    "lat": 43.2169093,
+    "lon": 27.9130888
+  },
+  "tags": {
+    "amenity": "kindergarten",
+    "name": "Център за деца със специални образователни потребности \"Карин дом\"\""
+  }
+},
+{
+  "type": "way",
+  "id": 1103055931,
+  "center": {
+    "lat": 43.2134285,
+    "lon": 27.8854613
+  },
+  "tags": {
+    "amenity": "school"
+  }
+},
+{
+  "type": "way",
+  "id": 1110170643,
+  "center": {
+    "lat": 43.2186790,
+    "lon": 27.8870889
+  },
+  "tags": {
+    "amenity": "childcare"
+  }
+},
+{
+  "type": "way",
+  "id": 1114918783,
+  "center": {
+    "lat": 43.2219324,
+    "lon": 27.8830280
+  },
+  "tags": {
+    "amenity": "kindergarten",
+    "name": "ЦДГ 7 Изворче"
+  }
+},
+{
+  "type": "way",
+  "id": 1118818249,
+  "center": {
+    "lat": 43.2758804,
+    "lon": 27.9653862
+  },
+  "tags": {
+    "amenity": "kindergarten"
+  }
+},
+{
+  "type": "way",
+  "id": 1118818259,
+  "center": {
+    "lat": 43.2759332,
+    "lon": 27.9668852
+  },
+  "tags": {
+    "amenity": "school",
+    "name": "ОУ Св. Климент Охридски"
+  }
+},
+{
+  "type": "way",
+  "id": 1198293508,
+  "center": {
+    "lat": 43.2158656,
+    "lon": 27.9186331
+  },
+  "tags": {
+    "amenity": "kindergarten",
+    "name": "Приказен свят"
+  }
+},
+{
+  "type": "way",
+  "id": 1282736799,
+  "center": {
+    "lat": 43.2164014,
+    "lon": 27.9240239
+  },
+  "tags": {
+    "amenity": "kindergarten",
+    "check_date": "2026-05-29",
+    "name": "17 ДГ \"Д-р Петър Берон\""
+  }
+},
+{
+  "type": "way",
+  "id": 1378280053,
+  "center": {
+    "lat": 43.1998923,
+    "lon": 27.7718620
+  },
+  "tags": {
+    "amenity": "school"
+  }
+},
+{
+  "type": "way",
+  "id": 1550768844,
+  "center": {
+    "lat": 43.2477902,
+    "lon": 27.8507771
+  },
+  "tags": {
+    "amenity": "kindergarten",
+    "name": "ДГ №38 „Маргаритка“",
+    "official_name": "Детска градина №38 „Маргаритка“",
+    "operator": "Община Варна",
+    "operator:type": "public",
+    "operator:wikidata": "Q748965",
+    "ref:BG:neispuo": "400225"
+  }
+},
+{
+  "type": "way",
+  "id": 1550768845,
+  "center": {
+    "lat": 43.2484791,
+    "lon": 27.8508173
+  },
+  "tags": {
+    "amenity": "kindergarten",
+    "name": "ДГ №42 „Българче“",
+    "official_name": "Детска градина №42 „Българче“",
+    "operator": "Община Варна",
+    "operator:type": "public",
+    "operator:wikidata": "Q748965",
+    "ref:BG:neispuo": "400237"
+  }
+},
+{
+  "type": "relation",
+  "id": 2371469,
+  "center": {
+    "lat": 43.2293601,
+    "lon": 27.8853017
+  },
+  "tags": {
+    "amenity": "kindergarten",
+    "name": "ДГ 32 \"Моряче\"",
+    "type": "multipolygon"
+  }
+},
+{
+  "type": "relation",
+  "id": 12585485,
+  "center": {
+    "lat": 43.2150786,
+    "lon": 27.9362307
+  },
+  "tags": {
+    "amenity": "school",
+    "building": "yes",
+    "name": "ПГ ИТOK \"Екзюпери\"",
+    "official_name": "Профилирана гимназия по информационни технологии и обществени комуникации \"Екзюпери\"",
+    "type": "multipolygon"
+  }
+},
+{
+  "type": "relation",
+  "id": 14524875,
+  "center": {
+    "lat": 43.2162883,
+    "lon": 27.9402722
+  },
+  "tags": {
+    "amenity": "kindergarten",
+    "type": "multipolygon"
+  }
+},
+{
+  "type": "relation",
+  "id": 16356023,
+  "center": {
+    "lat": 43.2610065,
+    "lon": 27.8111267
+  },
+  "tags": {
+    "amenity": "kindergarten",
+    "building": "yes",
+    "name": "ОДЗ Дружба",
+    "type": "multipolygon"
+  }
+}
+
+  ]
+}

@@ -825,6 +825,15 @@ def test_cli_parse_failure_exits_3_with_line_number(tmp_path: Path) -> None:
     assert "line 2" in result.stderr
 
 
+def test_cli_missing_database_url_exits_2(tmp_path: Path) -> None:
+    """From a cwd with no ../.env, Settings() cannot find DATABASE_URL."""
+    path = _write_pair(tmp_path, _csv(MAIN_17_NO_PIN))
+    result = _run_cli([str(path)], cwd=tmp_path)
+    assert result.returncode == 2
+    assert "DATABASE_URL" in result.stderr
+    assert "Traceback" not in result.stderr
+
+
 def test_cli_unknown_flag_shows_usage(tmp_path: Path) -> None:
     result = _run_cli(["--bogus"], cwd=tmp_path)
     assert result.returncode != 0
