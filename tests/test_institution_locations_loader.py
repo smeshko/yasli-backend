@@ -844,16 +844,24 @@ def test_cli_file_not_found_exits_2(tmp_path: Path) -> None:
 
 def test_cli_default_path_resolves_to_repo_data_dir_from_any_cwd(tmp_path: Path) -> None:
     """No path argument from a temp cwd: the default is the in-repo file,
-    anchored to the package. The committed file does not exist until
-    TASK-006, so the resolved absolute path shows up in the not-found error."""
-    result = _run_cli(["--dry-run"], cwd=tmp_path)
+    anchored to the package, never the cwd. Asked of the module from that
+    cwd, and confirmed by the CLI getting past its file check there (it
+    stops at the missing DATABASE_URL, never at a not-found file)."""
     expected = REPO_ROOT / "data" / "institution_locations.csv"
-    if expected.exists():  # after TASK-006 the default parses; either way it resolved
-        assert str(tmp_path) not in result.stderr
-    else:
-        assert result.returncode == 2
-        assert str(expected) in result.stderr
-        assert str(tmp_path) not in result.stderr
+    assert expected.exists()  # the committed file
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(REPO_ROOT / "src") + os.pathsep + env.get("PYTHONPATH", "")
+    printed = subprocess.run(
+        [sys.executable, "-c",
+         "from yasli.ingest.institution_locations_loader import DEFAULT_CSV; print(DEFAULT_CSV)"],
+        cwd=tmp_path, env=env, capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    assert Path(printed) == expected
+    assert not Path(printed).is_relative_to(tmp_path)
+    result = _run_cli(["--dry-run"], cwd=tmp_path)
+    assert result.returncode == 2
+    assert "not found" not in result.stderr
+    assert "DATABASE_URL" in result.stderr
 
 
 def test_cli_parse_failure_exits_3_with_line_number(tmp_path: Path) -> None:
