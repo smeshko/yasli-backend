@@ -333,6 +333,25 @@ def test_auto_row_with_no_geocode_passes() -> None:
     assert row["verification"] == "auto"
 
 
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("title_matches", True, "title_matches is True, not 1"),
+        ("title_matches", "1", "title_matches is '1', not 1"),
+        ("geocode_distance_m", "999", "geocode_distance_m '999' is not a number"),
+        ("geocode_distance_m", True, "geocode_distance_m True is not a number"),
+        ("settlement", 1, "settlement 1 does not agree"),
+    ],
+)
+def test_provenance_fields_are_type_checked_not_just_compared(field, value, message) -> None:
+    """A hand-edited entry with the wrong JSON type fails with a line
+    number, never with a TypeError — and ``true`` is not ``1``."""
+    bad = {"kindergarten/46": {**MAIN_AUTO_PROVENANCE["kindergarten/46"], field: value}}
+    err = _error(_csv(MAIN_AUTO), bad)
+    assert err.line_no == 2
+    assert message in str(err)
+
+
 def test_stale_provenance_entry_rejected() -> None:
     provenance = {**MAIN_AUTO_PROVENANCE, "nursery/1": MAIN_AUTO_PROVENANCE["kindergarten/46"]}
     err = _error(_csv(MAIN_AUTO), provenance)
