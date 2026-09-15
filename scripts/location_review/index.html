@@ -221,6 +221,7 @@
       <div class="meta">${pinLine}</div>
       <div class="actions">
         ${e.candidates.map((_, i) => `<button data-a="accept" data-i="${i}"><kbd>${i + 1}</kbd>accept #${i + 1}</button>`).join('')}
+        <button data-a="copy"><kbd>C</kbd>copy address</button>
         <button data-a="enter"><kbd>Enter</kbd>save pin${pin ? '' : ' (click the map or paste coordinates first)'}</button>
         <button data-a="paste"><kbd>P</kbd>paste coordinates</button>
         <button data-a="approx"><kbd>A</kbd>${pinPrecision === 'approximate' ? 'approximate ✓' : 'building'}</button>
@@ -259,6 +260,32 @@
 
   function accept(i) { decide({ status: 'accepted', candidate: i }); }
 
+  // The address as Google Maps wants it: the source text, with the city
+  // appended when the row (a branch, a nursery) does not name it.
+  function addressForSearch(e) {
+    const a = e.key.address || e.name;
+    return /варна/i.test(a) ? a : a + ', Варна';
+  }
+
+  async function copyText(text) {
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) { await navigator.clipboard.writeText(text); return true; }
+    } catch (err) { /* fall through to the legacy path */ }
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch (err) { ok = false; }
+    ta.remove();
+    return ok;
+  }
+
+  async function copyAddress() {
+    if (!selected) return;
+    const text = addressForSearch(selected);
+    setStatus((await copyText(text)) ? 'Copied: ' + text : 'Could not copy — select the address and copy it by hand', true);
+  }
+
   function move(delta) {
     const items = visible(); if (!items.length) return;
     const idx = selected ? items.findIndex(e => sameKey(e, selected)) : -1;
@@ -270,6 +297,7 @@
       case 'accept': return accept(Number(i));
       case 'enter': if (pin) return decide({ status: 'pinned', lat: pin.lat, lon: pin.lon, precision: pinPrecision }); return setStatus('Click the map to place a pin first', false);
       case 'paste': coordsBox.focus(); coordsBox.select(); return;
+      case 'copy': return copyAddress();
       case 'approx': pinPrecision = pinPrecision === 'approximate' ? 'building' : 'approximate'; return renderDetail();
       case 'nopin': return decide({ status: 'no_pin' });
       case 'undo':
@@ -309,7 +337,7 @@
     if (ev.key === 'p' || ev.key === 'P') { ev.preventDefault(); coordsBox.focus(); coordsBox.select(); return; }
     const k = ev.key;
     if (/^[1-9]$/.test(k)) { const i = Number(k) - 1; if (selected && i < selected.candidates.length) { ev.preventDefault(); accept(i); } return; }
-    const keys = { Enter: 'enter', a: 'approx', A: 'approx', n: 'nopin', N: 'nopin', u: 'undo', U: 'undo', j: 'next', J: 'next', k: 'prev', K: 'prev' };
+    const keys = { Enter: 'enter', a: 'approx', A: 'approx', n: 'nopin', N: 'nopin', u: 'undo', U: 'undo', j: 'next', J: 'next', k: 'prev', K: 'prev', c: 'copy', C: 'copy' };
     if (keys[k]) { ev.preventDefault(); action(keys[k]); }
   });
 
