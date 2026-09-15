@@ -355,6 +355,72 @@ def test_crash_between_the_candidates_write_and_the_derived_writes_is_repaired_o
     assert rows['ул. "Никола Михайловски" №6']["precision"] == "none"
 
 
+def _accept_the_auto_row(entries: list[dict]) -> list[dict]:
+    """The decision that must delete a provenance entry: the fixture's one
+    ``auto`` row confirmed by a person becomes ``osm_poi`` + ``human``."""
+    entries = [dict(e) for e in entries]
+    i = next(i for i, e in enumerate(entries) if e["decision"]["status"] == "auto")
+    entries[i] = state.apply_decision(entries[i], {"status": "accepted", "candidate": 0},
+                                      today=TODAY)
+    return entries
+
+
+def _tear_the_pair(paths: dict[str, Path]) -> list[dict]:
+    """Simulate a crash between write_file's two renames: the candidates
+    file (old hash) and the CSV carry the new decision, the provenance file
+    is from the previous save."""
+    from yasli.ingest.institution_locations_loader import render_csv
+
+    entries = _accept_the_auto_row(_fixture_entries())
+    rows, _provenance = state.render_csv_rows(entries)
+    state.save_candidates(paths["candidates"], entries,
+                          state.committed_hash(paths["csv"], paths["provenance"]))
+    state._atomic_write(paths["csv"], render_csv(rows))
+    with pytest.raises(LocationRowError, match="stale provenance"):
+        list(parse_file(paths["csv"], provenance_path=paths["provenance"]))
+    return entries
+
+
+def test_crash_between_the_csv_and_provenance_renames_is_repaired_on_restart(paths) -> None:
+    _tear_the_pair(paths)
+    doc = json.loads(paths["candidates"].read_text(encoding="utf-8"))
+    assert doc["source_hash"] != state.committed_hash(paths["csv"], paths["provenance"])
+
+    restarted = review.create_server(candidates_path=paths["candidates"], csv_path=paths["csv"],
+                                     provenance_path=paths["provenance"], port=0)
+    restarted.server_close()
+    rows = {(r["kind"], r["external_id"], r["role"]): r
+            for r in parse_file(paths["csv"], provenance_path=paths["provenance"])}
+    assert rows[("kindergarten", "38", "main")]["verification"] == "human"
+    assert json.loads(paths["provenance"].read_text(encoding="utf-8")) == {}
+    doc = json.loads(paths["candidates"].read_text(encoding="utf-8"))
+    assert doc["source_hash"] == state.committed_hash(paths["csv"], paths["provenance"])
+
+
+def test_load_committed_reports_a_torn_pair_only_when_local_state_vouches_for_it(paths) -> None:
+    entries = _tear_the_pair(paths)
+    doc = {"source_hash": None, "entries": entries}
+    rows, provenance, hash_value, torn = state.load_committed(paths["csv"], paths["provenance"], doc)
+    assert torn and rows == [] and provenance == {} and hash_value is None
+    # The same torn pair with a candidates file that does not match either
+    # file — or none at all — is a corrupted committed file, and propagates.
+    stale = {"source_hash": None, "entries": _fixture_entries()}
+    with pytest.raises(LocationRowError, match="stale provenance"):
+        state.load_committed(paths["csv"], paths["provenance"], stale)
+    with pytest.raises(LocationRowError, match="stale provenance"):
+        state.load_committed(paths["csv"], paths["provenance"], None)
+
+
+def test_a_hand_corrupted_committed_file_is_never_overwritten_by_local_state(paths) -> None:
+    with paths["csv"].open("a", encoding="utf-8") as fh:
+        fh.write("school,1,main,,x,43.2,27.9,building,manual,human,2026-09-15\n")
+    before = _snapshot(paths)
+    with pytest.raises(LocationRowError, match="kind 'school'"):
+        review.create_server(candidates_path=paths["candidates"], csv_path=paths["csv"],
+                             provenance_path=paths["provenance"], port=0)
+    assert _snapshot(paths) == before
+
+
 def test_stale_candidates_file_never_reverts_newer_committed_files(paths) -> None:
     # The committed files move ahead (a pull): the main row is now pinned.
     entries = _fixture_entries()

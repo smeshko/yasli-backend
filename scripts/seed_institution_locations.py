@@ -69,9 +69,7 @@ from yasli.ingest.institution_locations_loader import (
     DEFAULT_CSV,
     DEFAULT_PROVENANCE,
     MAX_GEOCODE_DISTANCE_M,
-    load_provenance,
     normalise_address,
-    parse_file,
 )
 from yasli.ingest.municipality import in_varna_municipality
 from yasli.models import Institution
@@ -713,13 +711,17 @@ def main(argv: list[str] | None = None) -> int:
         institutions = read_institutions(session)
     log.info("institutions: %d", len(institutions))
 
-    committed_rows = list(parse_file(args.csv, provenance_path=args.provenance)) if args.csv.exists() else []
-    committed_provenance = load_provenance(args.provenance)
+    doc = state.load_candidates(args.candidates)
+    committed_rows, committed_provenance, committed_hash_value, torn = state.load_committed(
+        args.csv, args.provenance, doc
+    )
+    if torn:
+        log.warning(
+            "%s and %s were torn by an interrupted save; regenerating both from %s",
+            args.csv, args.provenance, args.candidates,
+        )
     existing, rebuilt = state.reconcile(
-        state.load_candidates(args.candidates),
-        committed_rows,
-        committed_provenance,
-        state.committed_hash(args.csv, args.provenance),
+        doc, committed_rows, committed_provenance, committed_hash_value, torn=torn
     )
     for entry in existing.values():  # names come from the database, not the CSV
         inst = institutions.get((entry["key"]["kind"], entry["key"]["external_id"]))
