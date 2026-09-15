@@ -8,9 +8,12 @@ the database CHECK constraint.
 from __future__ import annotations
 
 import typing
+from datetime import date
+from decimal import Decimal
 
 import pytest
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, insert, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
@@ -19,11 +22,20 @@ from yasli.models import (
     Base,
     GraoAddress,
     Institution,
+    InstitutionLocation,
     Settlement,
     Street,
     address_institutions,
 )
-from yasli.models.types import DISTRICT_CODE_VALUES, KIND_VALUES, LOCALITY_TYPE_VALUES
+from yasli.models.types import (
+    DISTRICT_CODE_VALUES,
+    KIND_VALUES,
+    LOCALITY_TYPE_VALUES,
+    PRECISION_VALUES,
+    ROLE_VALUES,
+    SOURCE_VALUES,
+    VERIFICATION_VALUES,
+)
 
 
 def test_metadata_registers_v2_tables() -> None:
@@ -35,6 +47,7 @@ def test_metadata_registers_v2_tables() -> None:
         "address_institutions",
         "grao_addresses",
         "settlements",
+        "institution_locations",
     }.issubset(tables)
     assert "address_entries" not in tables
 
@@ -310,3 +323,181 @@ def test_settlement_round_trips(session_factory) -> None:
         assert row.municipality_code == "06"
         assert row.municipality_name == "ВАРНА"
         assert row.source == "grao_kads"
+
+
+# --- institution_locations (revision 0010) ---------------------------------
+
+
+LOCATION_ROW = {
+    "kind": "kindergarten",
+    "external_id": "46",
+    "role": "main",
+    "label": "",
+    "address": 'ул. "Никола Михайловски" №6',
+    "lat": Decimal("43.206500"),
+    "lon": Decimal("27.914200"),
+    "precision": "building",
+    "source": "osm_poi",
+    "verification": "auto",
+    "verified_at": date(2026, 9, 14),
+}
+
+
+def _location(**overrides):
+    row = dict(LOCATION_ROW)
+    row.update(overrides)
+    return row
+
+
+def test_metadata_registers_institution_locations() -> None:
+    assert "institution_locations" in Base.metadata.tables
+    assert InstitutionLocation.__tablename__ == "institution_locations"
+
+
+def test_institution_location_columns_registered() -> None:
+    cols = InstitutionLocation.__table__.c
+    not_null = {
+        "id",
+        "kind",
+        "external_id",
+        "role",
+        "label",
+        "address",
+        "precision",
+        "source",
+        "verification",
+        "verified_at",
+    }
+    assert not_null | {"lat", "lon"} == {c.name for c in cols}
+    for name in not_null:
+        assert cols[name].nullable is False, name
+    assert cols.lat.nullable is True
+    assert cols.lon.nullable is True
+    assert cols.kind.type.length == 16
+    assert cols.external_id.type.length == 16
+    assert cols.role.type.length == 8
+    assert cols.label.type.length == 128
+    assert cols.address.type.length == 256
+    assert cols.precision.type.length == 16
+    assert cols.source.type.length == 16
+    assert cols.verification.type.length == 8
+    assert (cols.lat.type.precision, cols.lat.type.scale) == (9, 6)
+    assert (cols.lon.type.precision, cols.lon.type.scale) == (9, 6)
+
+
+def _literal_values(cls, field: str) -> set[str]:
+    hints = typing.get_type_hints(cls, include_extras=False)
+    inner_args = typing.get_args(hints[field])
+    assert len(inner_args) == 1, hints[field]
+    return set(typing.get_args(inner_args[0]))
+
+
+def test_institution_location_literals_match_value_tuples() -> None:
+    assert _literal_values(InstitutionLocation, "kind") == set(KIND_VALUES)
+    assert _literal_values(InstitutionLocation, "role") == set(ROLE_VALUES)
+    assert _literal_values(InstitutionLocation, "precision") == set(PRECISION_VALUES)
+    assert _literal_values(InstitutionLocation, "source") == set(SOURCE_VALUES)
+    assert _literal_values(InstitutionLocation, "verification") == set(VERIFICATION_VALUES)
+
+
+def test_institution_location_value_tuples() -> None:
+    assert ROLE_VALUES == ("main", "branch")
+    assert PRECISION_VALUES == ("building", "approximate", "none")
+    assert SOURCE_VALUES == ("osm_poi", "nominatim", "manual")
+    assert VERIFICATION_VALUES == ("auto", "human")
+
+
+def test_institution_location_bulk_insert_without_id_on_sqlite(session_factory) -> None:
+    """The loader inserts row dicts with no ``id``; SQLite must autoincrement."""
+    rows = [
+        _location(),
+        _location(role="branch", address="ул. Н. Михайловски 1А", source="manual",
+                  verification="human"),
+        _location(external_id="17", role="branch", label="Жирафче", address="",
+                  lat=None, lon=None, precision="none", source="manual",
+                  verification="human"),
+    ]
+    with Session(session_factory) as s:
+        s.execute(insert(InstitutionLocation), rows)
+        s.commit()
+    with Session(session_factory) as s:
+        loaded = s.execute(
+            select(InstitutionLocation).order_by(InstitutionLocation.id)
+        ).scalars().all()
+    assert [r.id for r in loaded] == [1, 2, 3]
+    assert loaded[0].lat == Decimal("43.206500")
+    assert loaded[2].lat is None
+    assert loaded[2].label == "Жирафче"
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        pytest.param({"lon": None}, id="lat-without-lon"),
+        pytest.param({"lat": None}, id="lon-without-lat"),
+        pytest.param({"precision": "none"}, id="precision-none-with-coordinate"),
+        pytest.param(
+            {"lat": None, "lon": None, "precision": "building", "source": "manual",
+             "verification": "human"},
+            id="precision-building-without-coordinate",
+        ),
+        pytest.param({"role": "satellite"}, id="unknown-role"),
+        pytest.param({"source": "guess"}, id="unknown-source"),
+        pytest.param({"precision": "street"}, id="unknown-precision"),
+        pytest.param({"verification": "maybe"}, id="unknown-verification"),
+        pytest.param({"kind": "infant"}, id="unknown-kind"),
+        pytest.param({"source": "manual", "verification": "auto"}, id="manual-auto"),
+        pytest.param({"source": "nominatim", "verification": "auto"}, id="auto-nominatim"),
+        pytest.param({"role": "branch", "verification": "auto"}, id="auto-branch"),
+        pytest.param(
+            {"precision": "approximate", "verification": "auto"}, id="auto-approximate"
+        ),
+    ],
+)
+def test_institution_location_check_constraints_reject(session_factory, overrides) -> None:
+    with Session(session_factory) as s, pytest.raises(IntegrityError):
+        s.execute(insert(InstitutionLocation), [_location(**overrides)])
+        s.commit()
+
+
+def test_institution_location_unique_tuple(session_factory) -> None:
+    with Session(session_factory) as s:
+        s.execute(
+            insert(InstitutionLocation),
+            [
+                _location(role="branch", source="manual", verification="human"),
+                _location(role="branch", label="Б", source="manual", verification="human"),
+            ],
+        )
+        s.commit()
+    with Session(session_factory) as s, pytest.raises(IntegrityError):
+        s.execute(
+            insert(InstitutionLocation),
+            [_location(role="branch", source="manual", verification="human")],
+        )
+        s.commit()
+
+
+def test_institution_location_one_main_per_institution(session_factory) -> None:
+    with Session(session_factory) as s:
+        s.execute(insert(InstitutionLocation), [_location()])
+        s.commit()
+    with Session(session_factory) as s, pytest.raises(IntegrityError):
+        s.execute(
+            insert(InstitutionLocation),
+            [_location(address="другаде 1", source="manual", verification="human")],
+        )
+        s.commit()
+    with Session(session_factory) as s:
+        s.execute(
+            insert(InstitutionLocation),
+            [
+                _location(role="branch", address="ул. Батак 6", source="manual",
+                          verification="human"),
+                _location(role="branch", address="ул. Батак 8", source="manual",
+                          verification="human"),
+            ],
+        )
+        s.commit()
+        count = s.execute(select(InstitutionLocation)).scalars().all()
+    assert len(count) == 3
