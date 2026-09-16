@@ -182,7 +182,7 @@ def load_provenance(path: Path) -> dict[str, dict[str, Any]]:
         return {}
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as exc:
+    except ValueError as exc:  # JSONDecodeError, or an integer past the digit limit
         raise LocationRowError(None, f"provenance file {path} is not valid JSON: {exc}") from exc
     if not isinstance(data, dict) or not all(isinstance(v, dict) for v in data.values()):
         raise LocationRowError(
@@ -271,7 +271,9 @@ def _check_provenance_entry(
     if distance is not None and (
         isinstance(distance, bool)
         or not isinstance(distance, (int, float))
-        or not math.isfinite(distance)  # NaN and -inf never exceed the limit
+        # NaN and -inf never exceed the limit; ints are compared as ints,
+        # since float() of an oversized one raises OverflowError.
+        or (isinstance(distance, float) and not math.isfinite(distance))
         or distance < 0
     ):
         raise LocationRowError(

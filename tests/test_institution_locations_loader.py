@@ -346,6 +346,8 @@ def test_auto_row_with_no_geocode_passes() -> None:
         ("geocode_distance_m", float("-inf"), "geocode_distance_m -inf is not a finite"),
         ("geocode_distance_m", -1, "geocode_distance_m -1 is not a finite, non-negative"),
         ("geocode_distance_m", 151, "geocode_distance_m 151 exceeds 150"),
+        ("geocode_distance_m", 10**1000, "exceeds 150"),  # float() of this would overflow
+        ("geocode_distance_m", -(10**1000), "is not a finite, non-negative"),
         ("settlement", 1, "settlement 1 does not agree"),
     ],
 )
@@ -374,6 +376,16 @@ def test_provenance_for_a_human_row_is_stale() -> None:
 
 def test_load_provenance_missing_file_is_empty(tmp_path: Path) -> None:
     assert load_provenance(tmp_path / "nope.json") == {}
+
+
+def test_load_provenance_rejects_an_integer_past_the_digit_limit(tmp_path: Path) -> None:
+    """json.loads raises a plain ValueError, not JSONDecodeError, for an
+    integer longer than Python's digit limit; it must still be a
+    line-numbered file error, not a traceback."""
+    path = tmp_path / "p.json"
+    path.write_text('{"kindergarten/46": {"geocode_distance_m": ' + "9" * 5000 + "}}", encoding="utf-8")
+    with pytest.raises(LocationRowError, match="not valid JSON"):
+        load_provenance(path)
 
 
 def test_load_provenance_rejects_non_object(tmp_path: Path) -> None:
