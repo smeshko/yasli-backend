@@ -30,8 +30,12 @@ candidates and flags from local state. A stale local file can never revert a
 newer committed one. The one pair the strict parser must not be asked to
 read — a new CSV next to the previous provenance file, left by a crash
 between ``write_file``'s two renames — is recognised by
-:func:`load_committed` (the CSV is byte-identical to what the candidates
-file regenerates) and repaired from the candidates file.
+:func:`load_committed` from a journal ``persist`` stamps on the candidates
+file before the renames (``pending_write``: the hashes of the CSV and the
+provenance file about to be written, and of the provenance file on disk at
+that moment) and repaired from the candidates file. The journal is cleared
+once both renames landed, so in steady state no parse failure is ever
+"repaired".
 
 Only decided entries — ``auto``, ``accepted``, ``pinned``, ``no_pin`` — are
 written to the CSV. A ``pending`` row is simply absent, and the loader's
@@ -309,15 +313,15 @@ def load_committed(
     ``torn`` is the one parse failure that is repaired rather than raised:
     a crash between ``write_file``'s two renames leaves a new CSV next to
     the previous provenance file, which the parser's provenance cross-check
-    rejects. It is recognised, never guessed — the CSV on disk is
-    byte-identical to what the local candidates file regenerates, and only
-    ``persist`` can have produced that, after it wrote the candidates file.
-    The caller keeps the local decisions and regenerates both files. The
-    provenance file is no evidence either way (it is the *old* half of a
-    torn pair, so a stale candidates file would match it too), which is
-    why this relies on ``write_file`` renaming the CSV first. Every other
-    parse failure propagates, so a hand-corrupted committed file is never
-    silently overwritten.
+    rejects. It is recognised from the journal, never guessed: the
+    candidates file still carries the ``pending_write`` record ``persist``
+    stamped before the renames (it is cleared once both landed), the CSV
+    on disk hashes to the CSV that record said was about to be written,
+    and the provenance file hashes to the one the record says was on disk
+    at the time. The caller keeps the local decisions and regenerates both
+    files. Every other parse failure propagates — no journal, a CSV edited
+    since, a provenance file that is neither the previous nor the intended
+    one — so a hand-corrupted committed file is never silently overwritten.
     """
     from yasli.ingest.institution_locations_loader import (
         LocationRowError,
@@ -330,23 +334,42 @@ def load_committed(
     try:
         rows = list(parse_file(csv_path, provenance_path=provenance_path))
     except LocationRowError:
-        if doc is not None and _csv_matches_local(doc, csv_path):
+        if doc is not None and _torn_by_journal(doc.get("pending_write"), csv_path, provenance_path):
             return [], {}, None, True
         raise
     provenance = load_provenance(provenance_path)
     return rows, provenance, committed_hash(csv_path, provenance_path), False
 
 
-def _csv_matches_local(doc: Mapping[str, Any], csv_path: Path) -> bool:
-    """True when the CSV on disk is exactly what the candidates file would
-    regenerate."""
-    from yasli.ingest.institution_locations_loader import render_csv
+def _sha256(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
 
-    try:
-        rows, _provenance = render_csv_rows(doc.get("entries", []))
-        return csv_path.read_bytes() == render_csv(rows).encode("utf-8")
-    except (KeyError, TypeError, ValueError, ArithmeticError):
-        return False  # the candidates file cannot vouch for anything
+
+def _file_sha256(path: Path) -> str:
+    return _sha256(path.read_bytes() if path.exists() else b"")
+
+
+def pending_write(csv_text: str, provenance_text: str, provenance_path: Path) -> dict[str, str]:
+    """The journal entry ``persist`` stamps on the candidates file before
+    the two renames: what the CSV and the provenance file are about to
+    become, and what the provenance file is right now."""
+    return {
+        "csv": _sha256(csv_text.encode("utf-8")),
+        "provenance": _sha256(provenance_text.encode("utf-8")),
+        "previous_provenance": _file_sha256(provenance_path),
+    }
+
+
+def _torn_by_journal(journal: Any, csv_path: Path, provenance_path: Path) -> bool:
+    """True only for the pair an interrupted ``persist`` leaves: the CSV is
+    the one the journal said it was about to write, and the provenance
+    file is the one that was on disk when it started."""
+    if not isinstance(journal, dict):
+        return False
+    return (
+        _file_sha256(csv_path) == journal.get("csv")
+        and _file_sha256(provenance_path) == journal.get("previous_provenance")
+    )
 
 
 def reconcile(
@@ -412,10 +435,15 @@ def _atomic_write(path: Path, text: str) -> None:
 
 
 def save_candidates(
-    path: Path, entries: Iterable[Mapping[str, Any]], source_hash_value: str | None
+    path: Path,
+    entries: Iterable[Mapping[str, Any]],
+    source_hash_value: str | None,
+    pending: Mapping[str, str] | None = None,
 ) -> None:
+    """``pending`` is the :func:`pending_write` journal, present only
+    between ``persist``'s first write and its last."""
     ordered = sorted(entries, key=entry_key)
-    doc = {"source_hash": source_hash_value, "entries": ordered}
+    doc = {"source_hash": source_hash_value, "pending_write": pending, "entries": ordered}
     _atomic_write(path, json.dumps(doc, ensure_ascii=False, indent=1) + "\n")
 
 
@@ -437,14 +465,20 @@ def persist(
     start rebuilds from the committed files, which already carry the
     decision; a crash inside the second, between the CSV rename and the
     provenance rename, leaves a torn pair that :func:`load_committed`
-    recognises and the next start regenerates from the candidates file.
-    Nothing is lost in any of the three.
+    recognises from the ``pending_write`` journal the first write stamped
+    (cleared by the third) and the next start regenerates from the
+    candidates file. Nothing is lost in any of the three.
     """
-    from yasli.ingest.institution_locations_loader import write_file  # local: keeps import light
+    from yasli.ingest.institution_locations_loader import (  # local: keeps import light
+        render_csv,
+        render_provenance,
+        write_file,
+    )
 
     entries = [dict(e) for e in entries]
     rows, provenance = render_csv_rows(entries)
-    save_candidates(candidates_path, entries, committed_hash(csv_path, provenance_path))
+    journal = pending_write(render_csv(rows), render_provenance(provenance), provenance_path)
+    save_candidates(candidates_path, entries, committed_hash(csv_path, provenance_path), journal)
     write_file(csv_path, rows, provenance, provenance_path=provenance_path)
     save_candidates(candidates_path, entries, committed_hash(csv_path, provenance_path))
     return rows, provenance
