@@ -195,8 +195,10 @@ The committed artifacts, both in `data/`:
   all-pass entry, so an `auto` pin can be audited from the repo alone, and a
   hand-edited `auto` row fails to parse.
 
-Both files are written only by the seed script and the review tool, never
-by hand, and always together.
+Both files are written by the seed script, always together. A person
+resolves the rows the script leaves `pending` by writing `human` rows into
+the CSV by hand (the loop below); `auto` rows are never hand-edited — the
+parser rejects an `auto` row whose provenance entry does not match it.
 
 Each row carries three provenance columns:
 
@@ -204,7 +206,7 @@ Each row carries three provenance columns:
 | --- | --- | --- |
 | `precision` | `building`, `approximate`, `none` | how precise the pin is; `approximate` is a hand-placed pin on the block rather than the building; `none` is a deliberate blank |
 | `source` | `osm_poi`, `nominatim`, `manual` | where the coordinate came from: an OSM point of interest, the geocoder, or a person's hand |
-| `verification` | `auto`, `human` | how the row was decided: by the seed script's rules, or by a person in the review tool |
+| `verification` | `auto`, `human` | how the row was decided: by the seed script's rules, or by a person |
 
 `auto` is only ever `osm_poi` + `main` + `building` — the database CHECK and
 the parser both enforce it. A row is auto-accepted only when **all four**
@@ -219,8 +221,9 @@ candidate, every branch — goes to a person. **Geocoder output is never
 accepted without review**: all three measured wrong pins were geocoder hits.
 
 A `verification=human` row is a person's judgement that the seed script
-cannot reproduce. The script is resumable and keeps those decisions; do not
-"fix" a row by editing the CSV by hand, re-run the tool instead.
+cannot reproduce. The script is resumable and keeps those decisions: on a
+re-run it rebuilds every decision from the committed files, so a row
+written by hand survives, and the file comes back in canonical order.
 
 ### When to refresh
 
@@ -233,8 +236,11 @@ cannot reproduce. The script is resumable and keeps those decisions; do not
   `main` row's address with the table's through one normaliser (quote
   styles, `№` spacing, case, whitespace) and aborts on a difference; a seed
   re-run returns the row to review flagged `address_changed`.
-- **Someone reports a wrong pin.** Correct it in the review tool; the row
-  becomes `human` and its provenance entry is dropped.
+- **Someone reports a wrong pin.** Correct the row in the CSV by hand:
+  the new coordinate, `source=manual`, `verification=human`, today's
+  `verified_at`. If the row was `auto`, delete its entry (keyed
+  `kind/external_id`) from the provenance file too — the parser refuses a
+  provenance entry with no `auto` row, and `--dry-run` names the line.
 
 The loader runs **after** ingest, never with it: `just be-ingest` does not
 touch this table. Coordinates change roughly never, and coupling a
@@ -244,7 +250,7 @@ seed script's data collection break the routing refresh.
 ### Where to get the file
 
 The file is in the repo. A fresh checkout is complete: the committed CSV
-and provenance file are the record, and the review tool's working state
+and provenance file are the record, and the seed script's working state
 (`data/institution_locations.candidates.json`, gitignored) is a local cache
 that the seed script rebuilds from the committed files whenever it is
 missing or stale (it stores the hash of the files it was last regenerated
@@ -261,11 +267,12 @@ locally is enough):
 #    refreshes only auto and pending rows; re-flags moved institutions.
 uv run python -m scripts.seed_institution_locations
 
-# 2. Resolve the flagged rows on a map. Opens http://127.0.0.1:8765/.
-#    1/2 accept a candidate, click or paste coordinates (P) to place a pin,
-#    A marks it approximate, N no pin, U undo, Enter saves and moves on.
-#    Every decision lands in the CSV at once, through the parser.
-uv run python -m scripts.review_locations
+# 2. Resolve the flagged rows by hand. The candidates file lists every
+#    pending entry with its flags and candidates (OSM POI and geocoder
+#    hits, each with a coordinate, its settlement and whether it is inside
+#    the municipality). Add one row per entry to the CSV — see the table
+#    below — then let the parser check the file:
+uv run python -m yasli.ingest.institution_locations_loader --dry-run
 
 # 3. Commit the two files together.
 git add data/institution_locations.csv data/institution_locations.provenance.json
@@ -274,14 +281,26 @@ git commit -m "feat(data): refresh institution locations"
 # 4. Load — see below.
 ```
 
+A hand-written row is always `verification=human` with today's date in
+`verified_at`; the other columns follow the decision:
+
+| Decision | `lat`, `lon` | `source` | `precision` |
+| --- | --- | --- | --- |
+| a candidate from the candidates file is right | the candidate's | the candidate's (`osm_poi` or `nominatim`) | `building` |
+| you placed the pin yourself | yours | `manual` | `building`, or `approximate` for a block rather than a building |
+| nobody can locate the building | empty | `manual` | `none` |
+
+The dry run names the line of anything the parser rejects: a pin outside
+the municipality, a second `main` for one institution, a malformed `auto`
+row. Never hand-write an `auto` row.
+
 A seed re-run rewrites the CSV and the provenance file from every decided
 entry, so `human` rows survive it. Nothing decided is lost by deleting the
 candidates file either — the seed script rebuilds decisions from the
 committed files; what would lose decisions is discarding the CSV changes
 before they are committed.
 
-The seed script and review tool are committed but are not a maintained
-pipeline: the CSV is the artifact of record, and `tests/test_institution_locations_data.py`
+The seed script is committed but is not a maintained pipeline: the CSV is the artifact of record, and `tests/test_institution_locations_data.py`
 pins its shape (77 `main` rows, one per institution; 17 `branch` rows; the
 cases the plan names).
 
@@ -348,9 +367,8 @@ python -m yasli.ingest.institution_locations_loader --dry-run
 # Expect missing_main=0 address_drift=0.
 ```
 
-Then open a kindergarten with branches in the API (phase 1.3) or the
-review tool's `Auto-accepted` tab and spot-check a few pins against their
-source address.
+Then open a kindergarten with branches in the API (phase 1.3) and
+spot-check a few pins against their source address.
 
 ### Rollback
 

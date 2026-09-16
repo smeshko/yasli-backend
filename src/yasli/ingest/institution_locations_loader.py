@@ -3,7 +3,7 @@
 Parses the committed ``data/institution_locations.csv`` — one row per
 building an institution occupies — into validated row dicts for
 ``institution_locations``, and writes the same file back through the same
-checks so no other writer (the seed script, the review tool) can produce a
+checks so no other writer (the seed script) can produce a
 file this module would reject.
 
 File format (UTF-8, stdlib ``csv``, ``QUOTE_MINIMAL``)::
@@ -485,7 +485,7 @@ def write_file(
     before either rename, so the only window in which the pair can be torn
     is the two ``os.replace`` calls, and the CSV is renamed first so that
     window leaves exactly one shape — new CSV, old provenance — which the
-    review tool's state module recognises and regenerates from the
+    seed script's state module recognises and regenerates from the
     candidates file. Keep that order. Returns the parsed rows.
     """
     if provenance_path is None:
@@ -739,7 +739,7 @@ def main(argv: list[str] | None = None) -> int:
     except IncompleteFile as exc:
         print(
             f"error: {exc}\n"
-            "The table was not touched. Refresh the file (seed script -> review tool), "
+            "The table was not touched. Refresh the file (seed script, then resolve the flagged rows by hand), "
             "or pass --allow-incomplete for a local partial load.",
             file=sys.stderr,
         )

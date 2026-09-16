@@ -13,7 +13,7 @@ from collections import Counter
 
 import pytest
 
-from scripts.location_review.state import haversine_m
+from scripts.institution_locations_state import haversine_m
 from yasli.ingest.institution_locations_loader import (
     DEFAULT_CSV,
     DEFAULT_PROVENANCE,

@@ -1,5 +1,5 @@
 """Pure-helper tests for the institution locations seed script and the
-shared review state module. No network: every external response comes from
+shared state module. No network: every external response comes from
 ``scripts/fixtures/`` (captured 2026-09-15) or is inline.
 """
 
@@ -13,8 +13,8 @@ from pathlib import Path
 import pytest
 
 from scripts import seed_institution_locations as seed
-from scripts.location_review import state
-from yasli.ingest.institution_locations_loader import parse_rows
+from scripts import institution_locations_state as state
+from yasli.ingest.institution_locations_loader import LocationRowError, parse_file, parse_rows
 
 FIXTURES = Path(__file__).resolve().parents[1] / "scripts" / "fixtures"
 OVERPASS = json.loads((FIXTURES / "overpass_education.json").read_text(encoding="utf-8"))
@@ -659,3 +659,213 @@ def test_seed_script_never_imported_by_the_package() -> None:
     src = Path(__file__).resolve().parents[1] / "src" / "yasli"
     offenders = [p for p in src.rglob("*.py") if "scripts" in p.read_text(encoding="utf-8")]
     assert offenders == []
+
+
+# --- shared state: persist and crash recovery ---------------------------------------------
+
+
+def _paths(tmp_path: Path) -> dict[str, Path]:
+    return {
+        "candidates": tmp_path / "institution_locations.candidates.json",
+        "csv": tmp_path / "institution_locations.csv",
+        "provenance": tmp_path / "institution_locations.provenance.json",
+    }
+
+
+def _persist(entries, paths: dict[str, Path]):
+    return state.persist(entries, candidates_path=paths["candidates"], csv_path=paths["csv"],
+                         provenance_path=paths["provenance"])
+
+
+def _reload(paths: dict[str, Path]):
+    """What the seed script does on startup: load the candidates file and the
+    committed pair, then apply the lineage rule."""
+    doc = state.load_candidates(paths["candidates"])
+    rows, prov, hash_value, torn = state.load_committed(paths["csv"], paths["provenance"], doc)
+    return state.reconcile(doc, rows, prov, hash_value, torn=torn)
+
+
+def _candidates_doc(paths: dict[str, Path]) -> dict:
+    return json.loads(paths["candidates"].read_text(encoding="utf-8"))
+
+
+def _snapshot(paths: dict[str, Path]) -> dict[str, bytes]:
+    return {name: path.read_bytes() for name, path in paths.items()}
+
+
+def _by_key(row):
+    return tuple(row[column] for column in state.KEY_FIELDS)
+
+
+def _pending_branch():
+    return _entry("pending", role="branch", address="ул. Батак 6", candidates=[_geo()],
+                  flags=["branch"])
+
+
+def test_persist_writes_all_three_files_and_clears_the_journal(tmp_path: Path) -> None:
+    paths = _paths(tmp_path)
+    rows, provenance = _persist([_entry("auto", candidate=0), _pending_branch()], paths)
+    assert len(rows) == 1 and len(provenance) == 1  # the pending branch is not written
+    (parsed,) = parse_file(paths["csv"], provenance_path=paths["provenance"])
+    assert parsed["verification"] == "auto"
+    doc = _candidates_doc(paths)
+    assert len(doc["entries"]) == 2
+    assert doc["source_hash"] == state.committed_hash(paths["csv"], paths["provenance"])
+    assert doc["pending_write"] is None
+
+
+def test_crash_between_the_candidates_write_and_the_derived_writes_is_repaired_on_the_next_run(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from yasli.ingest import institution_locations_loader as loader
+
+    paths = _paths(tmp_path)
+    _persist([_entry("auto", candidate=0), _pending_branch()], paths)
+    csv_before = paths["csv"].read_bytes()
+    decided = [_entry("auto", candidate=0),
+               _entry("no_pin", role="branch", address="ул. Батак 6", candidates=[_geo()],
+                      flags=["branch"], source="manual", precision="none")]
+
+    def boom(*args, **kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(loader, "write_file", boom)
+    with pytest.raises(OSError, match="disk full"):
+        _persist(decided, paths)
+    monkeypatch.undo()
+    assert paths["csv"].read_bytes() == csv_before  # the decision is only in the candidates file
+    doc = _candidates_doc(paths)
+    assert doc["source_hash"] == state.committed_hash(paths["csv"], paths["provenance"])
+    assert any(e["decision"]["status"] == "no_pin" for e in doc["entries"])
+
+    entries, rebuilt = _reload(paths)  # matching hash: the local decision stands
+    assert rebuilt is False
+    _persist(entries.values(), paths)
+    rows = {r["address"]: r for r in parse_file(paths["csv"], provenance_path=paths["provenance"])}
+    assert rows["ул. Батак 6"]["precision"] == "none"
+
+
+def _tear_the_pair(paths: dict[str, Path], monkeypatch) -> None:
+    """Crash persist between its two renames — the provenance rename fails —
+    after a decision that must delete a provenance entry (the one ``auto``
+    row confirmed by a person becomes ``osm_poi`` + ``human``). Leaves the
+    candidates file (old hash, journal stamped) and the CSV carrying the new
+    decision, and the provenance file from the previous save."""
+    import os
+
+    _persist([_entry("auto", candidate=0)], paths)
+    accepted = [_entry("accepted", candidate=0, lat=43.2096, lon=27.9270, source="osm_poi",
+                       precision="building")]
+    real_replace = os.replace
+
+    def power_cut(src, dst):
+        if Path(dst) == paths["provenance"]:
+            raise OSError("power cut")
+        real_replace(src, dst)
+
+    monkeypatch.setattr(os, "replace", power_cut)
+    with pytest.raises(OSError, match="power cut"):
+        _persist(accepted, paths)
+    monkeypatch.undo()
+    with pytest.raises(LocationRowError, match="stale provenance"):
+        list(parse_file(paths["csv"], provenance_path=paths["provenance"]))
+    doc = _candidates_doc(paths)
+    assert doc["pending_write"] is not None
+    assert doc["source_hash"] != state.committed_hash(paths["csv"], paths["provenance"])
+
+
+def test_crash_between_the_csv_and_provenance_renames_is_repaired_on_the_next_run(
+    tmp_path: Path, monkeypatch
+) -> None:
+    paths = _paths(tmp_path)
+    _tear_the_pair(paths, monkeypatch)
+    doc = state.load_candidates(paths["candidates"])
+    rows, prov, hash_value, torn = state.load_committed(paths["csv"], paths["provenance"], doc)
+    assert torn and rows == [] and prov == {} and hash_value is None
+    entries, rebuilt = state.reconcile(doc, rows, prov, hash_value, torn=torn)
+    assert rebuilt is False  # the local decisions stand and regenerate both files
+    _persist(entries.values(), paths)
+    parsed = {(r["kind"], r["external_id"], r["role"]): r
+              for r in parse_file(paths["csv"], provenance_path=paths["provenance"])}
+    assert parsed[("kindergarten", "46", "main")]["verification"] == "human"
+    assert json.loads(paths["provenance"].read_text(encoding="utf-8")) == {}
+    doc = _candidates_doc(paths)
+    assert doc["source_hash"] == state.committed_hash(paths["csv"], paths["provenance"])
+    assert doc["pending_write"] is None  # the journal is cleared once both renames land
+
+
+def test_load_committed_reports_a_torn_pair_only_on_the_journal(tmp_path: Path, monkeypatch) -> None:
+    paths = _paths(tmp_path)
+    _tear_the_pair(paths, monkeypatch)
+    doc = _candidates_doc(paths)
+    # Without the journal (the last save completed) the same pair is a
+    # corrupted committed file, and propagates; so does no candidates doc.
+    with pytest.raises(LocationRowError, match="stale provenance"):
+        state.load_committed(paths["csv"], paths["provenance"], {**doc, "pending_write": None})
+    with pytest.raises(LocationRowError, match="stale provenance"):
+        state.load_committed(paths["csv"], paths["provenance"], None)
+    # A CSV edited by hand after the crash is not the journalled one either.
+    with paths["csv"].open("a", encoding="utf-8") as fh:
+        fh.write("kindergarten,17,branch,Бисерче,,,,none,manual,human,2026-09-15\n")
+    with pytest.raises(LocationRowError, match="stale provenance"):
+        state.load_committed(paths["csv"], paths["provenance"], doc)
+
+
+@pytest.mark.parametrize("corruption", ["not json {", None])
+def test_a_hand_corrupted_provenance_file_aborts_the_run_before_anything_is_written(
+    tmp_path: Path, corruption
+) -> None:
+    """In steady state the CSV always matches local state; that must not
+    make a broken provenance file look like an interrupted save."""
+    paths = _paths(tmp_path)
+    _persist([_entry("auto", candidate=0)], paths)
+    if corruption is None:  # a valid file whose entry no longer passes rule 1
+        doc = json.loads(paths["provenance"].read_text(encoding="utf-8"))
+        (entry,) = doc.values()
+        entry["title_matches"] = 2
+        corruption = json.dumps(doc, ensure_ascii=False)
+    paths["provenance"].write_text(corruption, encoding="utf-8")
+    before = _snapshot(paths)
+    with pytest.raises(LocationRowError):
+        _reload(paths)
+    assert _snapshot(paths) == before
+
+
+def test_a_hand_corrupted_committed_file_aborts_the_run(tmp_path: Path) -> None:
+    paths = _paths(tmp_path)
+    _persist([_entry("auto", candidate=0)], paths)
+    with paths["csv"].open("a", encoding="utf-8") as fh:
+        fh.write("school,1,main,,x,43.2,27.9,building,manual,human,2026-09-15\n")
+    before = _snapshot(paths)
+    with pytest.raises(LocationRowError, match="kind 'school'"):
+        _reload(paths)
+    assert _snapshot(paths) == before
+
+
+def test_a_row_written_into_the_csv_by_hand_becomes_a_decision_on_the_next_run(
+    tmp_path: Path,
+) -> None:
+    """The hand-resolution loop in OPERATIONS.md: the seed script leaves a
+    row pending, a person writes it into the CSV, and the next run picks it
+    up as that person's decision — never reverting it — while keeping the
+    candidates and flags from local state."""
+    paths = _paths(tmp_path)
+    _persist([_entry("auto", candidate=0), _pending_branch()], paths)
+    with paths["csv"].open("a", encoding="utf-8") as fh:
+        fh.write("kindergarten,46,branch,,ул. Батак 6,43.210000,27.920000,approximate,manual,human,2026-09-16\n")
+    committed_rows = list(parse_file(paths["csv"], provenance_path=paths["provenance"]))
+    assert _candidates_doc(paths)["source_hash"] != state.committed_hash(paths["csv"], paths["provenance"])
+
+    entries, rebuilt = _reload(paths)
+    assert rebuilt is True
+    entry = entries[("kindergarten", "46", "branch", "", "ул. Батак 6")]
+    assert entry["decision"]["status"] == "pinned"
+    assert (entry["decision"]["lat"], entry["decision"]["lon"]) == (43.21, 27.92)
+    assert entry["decision"]["precision"] == "approximate"
+    assert entry["decision"]["decided_at"] == "2026-09-16"
+    assert entry["candidates"] == [_geo()]  # kept from local state
+    assert entry["flags"] == ["branch"]
+    _persist(entries.values(), paths)  # re-rendered in canonical order: the same rows
+    rewritten = parse_file(paths["csv"], provenance_path=paths["provenance"])
+    assert sorted(rewritten, key=_by_key) == sorted(committed_rows, key=_by_key)
+    assert _candidates_doc(paths)["source_hash"] == state.committed_hash(paths["csv"], paths["provenance"])
