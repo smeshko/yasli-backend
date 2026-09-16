@@ -337,15 +337,22 @@ def test_auto_row_with_no_geocode_passes() -> None:
     ("field", "value", "message"),
     [
         ("title_matches", True, "title_matches is True, not 1"),
+        ("title_matches", 1.0, "title_matches is 1.0, not 1"),
         ("title_matches", "1", "title_matches is '1', not 1"),
-        ("geocode_distance_m", "999", "geocode_distance_m '999' is not a number"),
-        ("geocode_distance_m", True, "geocode_distance_m True is not a number"),
+        ("geocode_distance_m", "999", "geocode_distance_m '999' is not a finite, non-negative"),
+        ("geocode_distance_m", True, "geocode_distance_m True is not a finite, non-negative"),
+        ("geocode_distance_m", float("nan"), "geocode_distance_m nan is not a finite"),
+        ("geocode_distance_m", float("inf"), "geocode_distance_m inf is not a finite"),
+        ("geocode_distance_m", float("-inf"), "geocode_distance_m -inf is not a finite"),
+        ("geocode_distance_m", -1, "geocode_distance_m -1 is not a finite, non-negative"),
+        ("geocode_distance_m", 151, "geocode_distance_m 151 exceeds 150"),
         ("settlement", 1, "settlement 1 does not agree"),
     ],
 )
 def test_provenance_fields_are_type_checked_not_just_compared(field, value, message) -> None:
-    """A hand-edited entry with the wrong JSON type fails with a line
-    number, never with a TypeError — and ``true`` is not ``1``."""
+    """A hand-edited entry with the wrong JSON type or an impossible value
+    fails with a line number, never with a TypeError — ``true`` and ``1.0``
+    are not ``1``, and NaN or -inf never "exceed" the distance limit."""
     bad = {"kindergarten/46": {**MAIN_AUTO_PROVENANCE["kindergarten/46"], field: value}}
     err = _error(_csv(MAIN_AUTO), bad)
     assert err.line_no == 2
