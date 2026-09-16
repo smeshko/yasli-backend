@@ -6,8 +6,8 @@ Rows are loaded from the committed reference file
 never from the weekly snapshot. Every row carries how precise the pin is
 (``precision``), where the coordinate came from (``source``) and how the row
 was decided (``verification``): ``auto`` for a unique OSM POI match that
-passed the seed script's four rules, ``human`` for a decision made in the
-review tool.
+passed the seed script's four rules, ``human`` for a decision a person
+made.
 
 ``label`` and ``address`` are stored as the empty string when absent (the
 ``grao_addresses`` convention) so the UNIQUE tuple actually constrains —

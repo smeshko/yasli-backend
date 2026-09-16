@@ -17,7 +17,7 @@ for data we already touch and throw away: the source portal's
 95 rows and the scraper keeps only `ADDRESS`. The locations phase adds the one
 thing no source gives us — coordinates — as a curated reference dataset, because
 geocoding measurably cannot be trusted here: strict rules auto-accept the safe
-rows and a review tool puts the rest in front of a person.
+rows and a person resolves the rest by hand in the CSV.
 
 Cross-repo ordering is load-bearing: both the scraper and the backend validate
 the snapshot with `extra="forbid"`, so the backend must accept the new fields
@@ -82,14 +82,14 @@ Run `just be-migrate` then `just be-ingest` against the real R2 snapshot and sho
 
 **Linear**: YAS-7 (https://linear.app/ivo-tsonev/issue/YAS-7)
 
-**Goal**: Coordinates for all 77 institutions and the 12 addressed branch buildings load into the database from a committed file. Rows that pass strict automatic checks are accepted; only the rest are reviewed by a person, in a local map review tool.
+**Goal**: Coordinates for all 77 institutions and the 12 addressed branch buildings load into the database from a committed file. Rows that pass strict automatic checks are accepted; only the rest are resolved by a person, written into the CSV by hand.
 
 ### What to build
 
 - A committed reference file in the backend repo (one row per building: `kind`, `external_id`, `role` = `main` | `branch`, `label` for branches, `address`, `lat`, `lon`, `precision`, `source`, `verification` = `auto` | `human`, `verified_at`).
 - A committed Varna municipality boundary polygon (OSM), used as a hard reject.
 - A seed script that gathers candidates (OSM POI title match, rank-30 geocode) and **auto-accepts** a row only if: the POI title match is unique; the POI is inside the municipality polygon; its settlement agrees with the address (village vs. city); and it is within 150 m of any rank-30 geocode. Everything else — geocoder-only hits, disagreements, blanks, all branches — is flagged for review with its reasons. Geocoder output is never auto-accepted: all 3 measured wrong pins were geocoder hits (research §3.2). The polygon catches 2 of them; Константиново is inside the municipality, so the settlement rule catches the third.
-- **A local review tool**: a stdlib server plus a single HTML page with a Leaflet map. It shows a worklist of flagged rows with plain-language reasons, candidate pins, the municipality outline and the source address. Keyboard actions: accept a candidate, click or drag to place a pin, mark no pin, undo. Each decision is saved straight to the CSV through the parser, and the review can be resumed.
+- **Hand resolution of the flagged rows**: the seed script's candidates file lists each pending row with its reasons and candidate coordinates; a person writes the row into the CSV, the loader's dry run validates it through the parser, and a seed re-run keeps it as that person's decision. (A local map review tool was built for this phase and removed on 2026-09-16; the rows it produced stand.)
 - A review pass over the flagged rows only (~25–35 expected, ~20–40 minutes), plus a spot-check of 5 auto-accepted rows.
 - A `institution_locations` table plus a loader module with its own CLI, modelled on `src/yasli/ingest/grao_loader.py` — TRUNCATE + bulk INSERT, idempotent, same observable state on re-run.
 - A `justfile` recipe to run the loader, and a note in the backend docs on the manual refresh cadence (mirroring the ГРАО quarterly-refresh convention).
@@ -97,19 +97,19 @@ Run `just be-migrate` then `just be-ingest` against the real R2 snapshot and sho
 
 ### Acceptance criteria
 
-- [x] All 77 institutions have a `main` row; every coordinate is inside the Varna municipality polygon and is either auto-accepted by the rules above or resolved by a person in the review tool
+- [x] All 77 institutions have a `main` row; every coordinate is inside the Varna municipality polygon and is either auto-accepted by the rules above or resolved by a person
 - [x] The 3 measured geocoder failures (research §3.2) are not shipped as pins
 - [x] `main` rows nobody could pin carry no coordinate and are listed by name in the loader summary (target: 0) — a blank, never a guess
 - [x] The 12 branch buildings that have an address have a `branch` row; the 3 name-only branches ("Жирафче", "Другарче", "Бисерче") are present with a label and a NULL coordinate, not silently dropped
 - [x] Every row records `precision`, `source` and `verification`, so a later pass can tell an auto-accepted pin from a human-reviewed one
-- [x] The review tool shows flagged rows on a map with their reasons, and a decision made in it lands in the committed CSV and passes the parser
+- [x] A row a person writes into the committed CSV by hand passes the parser and is kept as that person's decision by a seed re-run
 - [x] Running the loader twice leaves the table in the same state
 - [x] The loader fails loudly on a row whose `(kind, external_id)` has no matching institution
 - [x] `just be-test` and `just be-lint` pass
 
 ### Validation
 
-Run the loader against a fresh database and show the row counts by `role`, `precision` and `verification`; a screenshot of the review tool with the worklist empty; plus a spot check of five known institutions against their source `ADDRESS`. Include the ДГ№13 "Мир" case (1 main + 4 branches) as evidence branches load.
+Run the loader against a fresh database and show the row counts by `role`, `precision` and `verification`; the seed script's summary with no pending rows; plus a spot check of five known institutions against their source `ADDRESS`. Include the ДГ№13 "Мир" case (1 main + 4 branches) as evidence branches load.
 
 ---
 
@@ -150,5 +150,5 @@ Run the loader against a fresh database and show the row counts by `role`, `prec
 
 - [ ] Every phase merged and its acceptance criteria met
 - [ ] A single API call returns everything a detail page needs for any of the 77 institutions
-- [x] The coordinate dataset is reproducible: the seeding script and review tool are committed, and the auto-accept rules and review step are documented
+- [x] The coordinate dataset is reproducible: the seeding script is committed, and the auto-accept rules and the hand-resolution step are documented
 - [ ] Status row in [EPICS.md](./EPICS.md) updated to `Done`

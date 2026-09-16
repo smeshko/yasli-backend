@@ -38,5 +38,5 @@ target-version = "py312"
 testpaths = ["tests"]
 addopts = "-ra"
 # Lets tests import the one-off scripts (`scripts.seed_institution_locations`,
-# `scripts.location_review`); `testpaths` keeps scripts/ out of collection.
+# `scripts.institution_locations_state`); `testpaths` keeps scripts/ out of collection.
 pythonpath = ["."]

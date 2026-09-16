@@ -18,21 +18,24 @@ then decides each row:
   150 m;
 * **pending**, with plain flags, otherwise — geocoder-only hits, ambiguous
   titles, disagreements, no candidate, every branch. Any flag forces
-  pending. A candidate outside the polygon stays in the list so the reviewer
+  pending. A candidate outside the polygon stays in the list so a person
   sees what the geocoder did, but can never be accepted.
 
 Geocoder output is never accepted without review: all three measured wrong
 pins (research §3.2) were Nominatim hits. Rank 26–27 (street) and 16–19
 (settlement centroid) hits are discarded outright.
 
-Output: the candidates file for the review tool, plus — through the same
-renderer and the loader's validating writer — the CSV of every decided row
-and the provenance file for the ``auto`` ones. Resumable: entries a person
-decided (``accepted``, ``pinned``, ``no_pin``) are kept and never re-gathered,
-except that a ``main`` entry whose institution address changed is reset to
-``pending`` with flag ``address_changed``. The lineage rule in
-``scripts.location_review.state`` decides whether local decisions or the
-committed files win on startup.
+Output: the candidates file (the script's working state, and the worklist a
+person resolves by hand: every ``pending`` entry with its flags and
+candidates), plus — through the same renderer and the loader's validating
+writer — the CSV of every decided row and the provenance file for the
+``auto`` ones. Resumable: entries a person decided (``accepted``,
+``pinned``, ``no_pin``) are kept and never re-gathered, except that a
+``main`` entry whose institution address changed is reset to ``pending``
+with flag ``address_changed``. The lineage rule in
+``scripts.institution_locations_state`` decides whether local decisions or
+the committed files win on startup, so a row written into the CSV by hand
+is picked up as a decision on the next run.
 
 Never imported by ``src/yasli`` and never run in CI or tests: it talks to
 three third-party services (Overpass, Nominatim, dg.uslugi.io) with rate
@@ -62,8 +65,8 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from scripts.location_review import state
-from scripts.location_review.state import haversine_m  # noqa: F401 - re-exported for callers
+from scripts import institution_locations_state as state
+from scripts.institution_locations_state import haversine_m  # noqa: F401 - re-exported for callers
 from yasli.db import get_engine
 from yasli.ingest.institution_locations_loader import (
     DEFAULT_CSV,
