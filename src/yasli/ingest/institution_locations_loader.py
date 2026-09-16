@@ -76,6 +76,7 @@ import argparse
 import csv
 import io
 import json
+import math
 import os
 import re
 import sys
@@ -252,7 +253,7 @@ def _check_provenance_entry(
     # integer 1, and a quoted number is not a distance. A hand-edited entry
     # fails here with a line number rather than with a TypeError.
     title_matches = entry.get("title_matches")
-    if isinstance(title_matches, bool) or title_matches != 1:
+    if type(title_matches) is not int or title_matches != 1:  # not True, not 1.0
         raise LocationRowError(
             line_no, f"auto row {key}: title_matches is {title_matches!r}, not 1"
         )
@@ -268,10 +269,14 @@ def _check_provenance_entry(
         )
     distance = entry.get("geocode_distance_m")
     if distance is not None and (
-        isinstance(distance, bool) or not isinstance(distance, (int, float))
+        isinstance(distance, bool)
+        or not isinstance(distance, (int, float))
+        or not math.isfinite(distance)  # NaN and -inf never exceed the limit
+        or distance < 0
     ):
         raise LocationRowError(
-            line_no, f"auto row {key}: geocode_distance_m {distance!r} is not a number"
+            line_no,
+            f"auto row {key}: geocode_distance_m {distance!r} is not a finite, non-negative number",
         )
     if distance is not None and distance > MAX_GEOCODE_DISTANCE_M:
         raise LocationRowError(
