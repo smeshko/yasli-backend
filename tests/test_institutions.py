@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, insert
+from sqlalchemy import create_engine, insert, update
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.pool import StaticPool
 
@@ -19,7 +19,25 @@ from yasli.routes import institutions as institutions_module
 
 CACHE_CONTROL = "public, max-age=3600, stale-while-revalidate=86400"
 LIST_KEYS = {"id", "external_id", "name", "kind", "source_url", "last_seen_at"}
-DETAIL_KEYS = LIST_KEYS | {"coverage"}
+# Declared independently of LIST_KEYS: the two payloads stop being a subset of
+# one another once the detail carries contacts the list does not.
+DETAIL_KEYS = {
+    "id",
+    "external_id",
+    "name",
+    "kind",
+    "source_url",
+    "last_seen_at",
+    "address",
+    "phone",
+    "email",
+    "director",
+    "website",
+    "district_code",
+    "has_infant_group",
+    "coverage",
+}
+CONTACT_FIELDS = ("address", "phone", "email", "director", "website", "district_code")
 STREET_KEYS = {"id", "city", "raw_name", "street_part", "type_marker"}
 ADDRESS_KEYS = {"id", "number_int", "number_suffix", "entrance"}
 NOW = datetime(2026, 5, 10, 12, 0, tzinfo=UTC)
@@ -342,6 +360,62 @@ def test_detail_does_not_include_server_only_fields(client: TestClient) -> None:
         assert "institution_id" not in group
         for address in group["addresses"]:
             assert "street_id" not in address
+
+
+def test_detail_absent_fields_are_null_not_omitted(client: TestClient) -> None:
+    _seed_institutions(client, [{"id": 1}])
+
+    body = client.get("/api/institutions/1").json()
+
+    for field in CONTACT_FIELDS:
+        assert field in body, field
+        assert body[field] is None, field
+    assert body["has_infant_group"] is False
+
+
+def test_detail_returns_contact_fields_verbatim(client: TestClient) -> None:
+    _seed_institutions(
+        client,
+        [
+            {
+                "id": 1,
+                "address": "ул. Тест 1",
+                "phone": "052/123-456",
+                "email": "dg@example.bg",
+                "director": "Иван Иванов",
+                "website": "https://dg.example.bg",
+                "district_code": "03",
+                "has_infant_group": True,
+            }
+        ],
+    )
+
+    body = client.get("/api/institutions/1").json()
+
+    assert body["address"] == "ул. Тест 1"
+    assert body["phone"] == "052/123-456"
+    assert body["email"] == "dg@example.bg"
+    assert body["director"] == "Иван Иванов"
+    assert body["website"] == "https://dg.example.bg"
+    assert body["district_code"] == "03"
+    assert body["has_infant_group"] is True
+
+
+def test_detail_etag_changes_when_contact_changes(client: TestClient) -> None:
+    _seed_institutions(client, [{"id": 1, "phone": "052/000-000"}])
+    first = client.get("/api/institutions/1").headers["etag"]
+
+    assert db._SessionLocal is not None
+    with db._SessionLocal() as session:
+        session.execute(
+            update(Institution).where(Institution.id == 1).values(phone="052/999-999")
+        )
+        session.commit()
+
+    second = client.get("/api/institutions/1")
+
+    assert second.json()["phone"] == "052/999-999"
+    assert second.headers["etag"] != first
 
 
 def test_detail_institution_with_no_coverage_returns_empty_array(
