@@ -1,6 +1,6 @@
 # Plan: Expose the enriched institution profile
 
-Status: in-progress
+Status: done
 Branch: feature/yas-8-institution-profile-endpoint
 Risk: medium
 Epic: 01 — Institution data foundation ([epic](../../epics/01-institution-data-foundation.md))
@@ -146,29 +146,29 @@ Settled by the epic or by the user on 2026-09-16, with no alternative weighed:
 
 ## Acceptance Criteria
 
-- [ ] The detail response carries `address`, `phone`, `email`, `director`,
+- [x] The detail response carries `address`, `phone`, `email`, `director`,
       `website`, `district_code`, `has_infant_group`, `location` and
       `branches`, with `null` (not omitted) wherever data is absent, and the
       OpenAPI schema marks each nullable field as required
-- [ ] `GET /api/institutions/by-source/kindergarten/46` returns ДГ№13 "Мир"
+- [x] `GET /api/institutions/by-source/kindergarten/46` returns ДГ№13 "Мир"
       with a building-precision `location` and its 4 `branches`, each with a
       location
-- [ ] For the same institution the id route and the by-source route return
+- [x] For the same institution the id route and the by-source route return
       byte-identical bodies and ETags
-- [ ] An unknown `(kind, external_id)` returns 404
+- [x] An unknown `(kind, external_id)` returns 404
       `{"error": "institution_not_found"}`; an invalid `kind` returns 422
-- [ ] List items carry `has_infant_group` and `location` (`null` when there
+- [x] List items carry `has_infant_group` and `location` (`null` when there
       is no `main` row or no pin); the list's order and row count are
       unchanged
-- [ ] Coverage grouping and ordering are unchanged; ETags are stable across
+- [x] Coverage grouping and ordering are unchanged; ETags are stable across
       requests and change when a contact value, a coordinate or a branch
       changes
-- [ ] `search_norm`, junction-table columns, `source`, `verification`,
+- [x] `search_norm`, junction-table columns, `source`, `verification`,
       `verified_at` and `role` never appear in any response or OpenAPI schema
-- [ ] `openapi-typescript` consumes the running backend's `/openapi.json`
+- [x] `openapi-typescript` consumes the running backend's `/openapi.json`
       (`just fe-api-types` succeeds; the diff is captured and the file
       restored)
-- [ ] `just be-test` and `just be-lint` pass
+- [x] `just be-test` and `just be-lint` pass
 
 ## Tasks
 
@@ -179,4 +179,4 @@ Task state lives here. Tasks are appended by `scripts/add_task.py` and
 - [x] TASK-002: Add location and branches to the detail response (depends on TASK-001)
 - [x] TASK-003: Add the by-source detail route (depends on TASK-002)
 - [x] TASK-004: Add the infant flag and location to the list response (depends on TASK-002)
-- [ ] TASK-005: Final Validation
+- [x] TASK-005: Final Validation

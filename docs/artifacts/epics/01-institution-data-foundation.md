@@ -1,6 +1,6 @@
 # Epic 01 — Institution data foundation
 
-Status: in progress
+Status: done
 Created: 2026-08-17
 Depends on: none
 Project: institution-profiles
@@ -115,7 +115,7 @@ Run the loader against a fresh database and show the row counts by `role`, `prec
 
 ## Phase 1.3 — Expose the enriched institution profile
 
-**Plan**: [institution-profile-endpoint](../plans/institution-profile-endpoint/PLAN.md) · status: in-progress
+**Plan**: [institution-profile-endpoint](../plans/institution-profile-endpoint/PLAN.md) · status: done
 
 **Linear**: YAS-8 (https://linear.app/ivo-tsonev/issue/YAS-8)
 
@@ -131,12 +131,12 @@ Run the loader against a fresh database and show the row counts by `role`, `prec
 
 ### Acceptance criteria
 
-- [ ] The detail response carries every new field, with `null` (not omitted) where data is absent
-- [ ] `GET /api/institutions/by-source/kindergarten/46` returns ДГ№13 "Мир" with its 4 branches
-- [ ] An unknown `(kind, external_id)` returns 404 with the same error body shape as the id route; an invalid `kind` returns 422
-- [ ] Coverage grouping and ordering are unchanged, and the ETag still changes only when the payload does
-- [ ] `search_norm` and junction-table columns still never appear in a response
-- [ ] `just be-test` and `just be-lint` pass
+- [x] The detail response carries every new field, with `null` (not omitted) where data is absent
+- [x] `GET /api/institutions/by-source/kindergarten/46` returns ДГ№13 "Мир" with its 4 branches
+- [x] An unknown `(kind, external_id)` returns 404 with the same error body shape as the id route; an invalid `kind` returns 422
+- [x] Coverage grouping and ordering are unchanged, and the ETag still changes only when the payload does
+- [x] `search_norm` and junction-table columns still never appear in a response
+- [x] `just be-test` and `just be-lint` pass
 
 ### Validation
 
@@ -148,7 +148,7 @@ Run the loader against a fresh database and show the row counts by `role`, `prec
 
 ## Epic-level acceptance criteria
 
-- [ ] Every phase merged and its acceptance criteria met
-- [ ] A single API call returns everything a detail page needs for any of the 77 institutions
+- [x] Every phase merged and its acceptance criteria met
+- [x] A single API call returns everything a detail page needs for any of the 77 institutions
 - [x] The coordinate dataset is reproducible: the seeding script is committed, and the auto-accept rules and the hand-resolution step are documented
-- [ ] Status row in [EPICS.md](./EPICS.md) updated to `Done`
+- [x] Status row in [EPICS.md](./EPICS.md) updated to `Done`
