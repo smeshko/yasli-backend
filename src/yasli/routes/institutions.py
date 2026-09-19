@@ -2,6 +2,8 @@
 
 Mounted under `/api` by `yasli.main`, so the public paths are
 `/api/institutions` and `/api/institutions/{institution_id}`.
+The detail is the enriched institution profile: the snapshot columns plus the
+address, contact and district metadata the `institutions` table stores.
 Both responses are deterministic snapshot views with strong content-derived
 ETags and the same cache headers used by the bulk dump endpoints.
 """
@@ -24,12 +26,29 @@ from yasli.db import get_db
 from yasli.models.address import Address, address_institutions
 from yasli.models.institution import Institution
 from yasli.models.street import Street
-from yasli.models.types import Kind
+from yasli.models.types import DistrictCode, Kind
 
 router = APIRouter()
 
 CACHE_CONTROL = "public, max-age=3600, stale-while-revalidate=86400"
 VARY = "Accept-Encoding"
+
+# The detail's scalar columns, in response key order.
+_INSTITUTION_COLUMNS = (
+    Institution.id,
+    Institution.external_id,
+    Institution.name,
+    Institution.kind,
+    Institution.source_url,
+    Institution.last_seen_at,
+    Institution.address,
+    Institution.phone,
+    Institution.email,
+    Institution.director,
+    Institution.website,
+    Institution.district_code,
+    Institution.has_infant_group,
+)
 
 
 class InstitutionListItem(BaseModel):
@@ -62,12 +81,24 @@ class CoverageGroup(BaseModel):
 
 
 class InstitutionDetail(BaseModel):
+    # Field order is JSON key order: the body is serialised from this model by
+    # hand, and the ETag hashes exactly those bytes.
     id: int
     external_id: str
     name: str
     kind: Kind
     source_url: str
     last_seen_at: datetime
+    # Declared without defaults so they are required-and-nullable: always
+    # present in the body, in OpenAPI's `required`, and `X | null` in the
+    # generated TypeScript.
+    address: str | None
+    phone: str | None
+    email: str | None
+    director: str | None
+    website: str | None
+    district_code: DistrictCode | None
+    has_infant_group: bool
     coverage: list[CoverageGroup]
 
 
@@ -163,14 +194,7 @@ def get_institution(
     if_none_match: str | None = Header(default=None, alias="If-None-Match"),
 ) -> Response | JSONResponse:
     institution_row = session.execute(
-        select(
-            Institution.id,
-            Institution.external_id,
-            Institution.name,
-            Institution.kind,
-            Institution.source_url,
-            Institution.last_seen_at,
-        ).where(Institution.id == institution_id)
+        select(*_INSTITUTION_COLUMNS).where(Institution.id == institution_id)
     ).first()
     if institution_row is None:
         return JSONResponse(status_code=404, content={"error": "institution_not_found"})
@@ -237,6 +261,13 @@ def get_institution(
         kind=institution_row.kind,
         source_url=institution_row.source_url,
         last_seen_at=institution_row.last_seen_at,
+        address=institution_row.address,
+        phone=institution_row.phone,
+        email=institution_row.email,
+        director=institution_row.director,
+        website=institution_row.website,
+        district_code=institution_row.district_code,
+        has_infant_group=institution_row.has_infant_group,
         coverage=coverage,
     )
     body = _json_bytes(detail)

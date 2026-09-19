@@ -1,6 +1,6 @@
 # Plan: Expose the enriched institution profile
 
-Status: draft
+Status: in-progress
 Branch: feature/yas-8-institution-profile-endpoint
 Risk: medium
 Epic: 01 — Institution data foundation ([epic](../../epics/01-institution-data-foundation.md))
@@ -175,7 +175,7 @@ Settled by the epic or by the user on 2026-09-16, with no alternative weighed:
 Task state lives here. Tasks are appended by `scripts/add_task.py` and
 `scripts/add_final_task.py`. Update the checkboxes as work progresses.
 
-- [ ] TASK-001: Add address, contacts, district and the infant flag to the detail response
+- [x] TASK-001: Add address, contacts, district and the infant flag to the detail response
 - [ ] TASK-002: Add location and branches to the detail response (depends on TASK-001)
 - [ ] TASK-003: Add the by-source detail route (depends on TASK-002)
 - [ ] TASK-004: Add the infant flag and location to the list response (depends on TASK-002)

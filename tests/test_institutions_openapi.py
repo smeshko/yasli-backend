@@ -11,7 +11,32 @@ from yasli.main import app
 
 EXPECTED_KINDS = {"nursery", "kindergarten", "preschool"}
 LIST_KEYS = {"id", "external_id", "name", "kind", "source_url", "last_seen_at"}
-DETAIL_KEYS = LIST_KEYS | {"coverage"}
+# Declared independently of LIST_KEYS: the detail carries contacts the list does not.
+DETAIL_KEYS = {
+    "id",
+    "external_id",
+    "name",
+    "kind",
+    "source_url",
+    "last_seen_at",
+    "address",
+    "phone",
+    "email",
+    "director",
+    "website",
+    "district_code",
+    "has_infant_group",
+    "coverage",
+}
+NULLABLE_DETAIL_FIELDS = (
+    "address",
+    "phone",
+    "email",
+    "director",
+    "website",
+    "district_code",
+)
+EXPECTED_DISTRICT_CODES = {"01", "02", "03", "04", "05"}
 STREET_KEYS = {"id", "city", "raw_name", "street_part", "type_marker"}
 ADDRESS_KEYS = {"id", "number_int", "number_suffix", "entrance"}
 
@@ -107,6 +132,38 @@ def test_institutions_detail_nested_schemas_have_expected_fields(
     assert "search_norm" not in street_schema["properties"]
     assert "address_id" not in addresses_schema["properties"]
     assert "institution_id" not in addresses_schema["properties"]
+
+
+def _detail_schema(openapi: dict[str, Any]) -> dict[str, Any]:
+    op = openapi["paths"]["/api/institutions/{institution_id}"]["get"]
+    schema = op["responses"]["200"]["content"]["application/json"]["schema"]
+    return _resolve_schema(openapi, schema)
+
+
+def _admits_null(openapi: dict[str, Any], schema: dict[str, Any]) -> bool:
+    for key in ("anyOf", "oneOf"):
+        for item in schema.get(key, []):
+            if item.get("type") == "null":
+                return True
+    return False
+
+
+def test_institutions_detail_new_fields_are_required_nullable(
+    openapi: dict[str, Any],
+) -> None:
+    detail_schema = _detail_schema(openapi)
+    required = set(detail_schema["required"])
+
+    for name in NULLABLE_DETAIL_FIELDS:
+        assert name in required, name
+        assert _admits_null(openapi, detail_schema["properties"][name]), name
+
+    assert (
+        _enum_values(openapi, detail_schema["properties"]["district_code"])
+        == EXPECTED_DISTRICT_CODES
+    )
+    assert "has_infant_group" in required
+    assert detail_schema["properties"]["has_infant_group"]["type"] == "boolean"
 
 
 def test_institutions_kind_resolves_to_expected_enum_values(

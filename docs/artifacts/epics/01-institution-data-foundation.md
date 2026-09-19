@@ -115,7 +115,7 @@ Run the loader against a fresh database and show the row counts by `role`, `prec
 
 ## Phase 1.3 — Expose the enriched institution profile
 
-**Plan**: [institution-profile-endpoint](../plans/institution-profile-endpoint/PLAN.md) · status: planned
+**Plan**: [institution-profile-endpoint](../plans/institution-profile-endpoint/PLAN.md) · status: in-progress
 
 **Linear**: YAS-8 (https://linear.app/ivo-tsonev/issue/YAS-8)
 
