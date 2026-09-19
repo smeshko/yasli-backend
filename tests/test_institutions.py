@@ -769,6 +769,116 @@ def test_detail_if_none_match_miss_returns_full_body(client: TestClient) -> None
     assert set(resp.json().keys()) == DETAIL_KEYS
 
 
+BY_SOURCE = "/api/institutions/by-source"
+
+
+def test_by_source_matches_id_route_bytes_and_etag(client: TestClient) -> None:
+    _seed_dg13(client)
+
+    by_source = client.get(f"{BY_SOURCE}/kindergarten/46")
+    by_id = client.get("/api/institutions/13")
+
+    assert by_source.status_code == 200
+    assert by_source.content == by_id.content
+    assert by_source.headers["etag"] == by_id.headers["etag"]
+    assert by_source.headers["cache-control"] == CACHE_CONTROL
+    assert by_source.headers["vary"] == "Accept-Encoding"
+    assert set(by_source.json().keys()) == DETAIL_KEYS
+
+
+def test_by_source_unknown_pair_returns_404(client: TestClient) -> None:
+    _seed_dg13(client)
+
+    resp = client.get(f"{BY_SOURCE}/kindergarten/999")
+
+    assert resp.status_code == 404
+    assert resp.json() == {"error": "institution_not_found"}
+
+
+def test_by_source_invalid_kind_returns_422(client: TestClient) -> None:
+    _seed_dg13(client)
+
+    assert client.get(f"{BY_SOURCE}/school/46").status_code == 422
+
+
+def test_by_source_distinguishes_kind_and_exact_external_id(client: TestClient) -> None:
+    _seed_institutions(
+        client,
+        [
+            {"id": 1, "kind": "nursery", "external_id": "46", "name": "Nursery 46"},
+            {
+                "id": 2,
+                "kind": "kindergarten",
+                "external_id": "46",
+                "name": "Kindergarten 46",
+            },
+        ],
+    )
+
+    assert client.get(f"{BY_SOURCE}/nursery/46").json()["id"] == 1
+    assert client.get(f"{BY_SOURCE}/kindergarten/46").json()["id"] == 2
+    assert client.get(f"{BY_SOURCE}/kindergarten/460").status_code == 404
+
+
+def test_by_source_method_not_allowed(client: TestClient) -> None:
+    assert client.post(f"{BY_SOURCE}/kindergarten/46").status_code == 405
+
+
+def test_by_source_if_none_match_returns_304(client: TestClient) -> None:
+    _seed_dg13(client)
+    etag = client.get(f"{BY_SOURCE}/kindergarten/46").headers["etag"]
+
+    resp = client.get(
+        f"{BY_SOURCE}/kindergarten/46", headers={"If-None-Match": etag}
+    )
+
+    assert resp.status_code == 304
+    assert resp.content == b""
+    assert resp.headers["etag"] == etag
+    assert resp.headers["cache-control"] == CACHE_CONTROL
+    assert resp.headers["vary"] == "Accept-Encoding"
+
+
+def test_by_source_if_none_match_miss_returns_full_body(client: TestClient) -> None:
+    _seed_dg13(client)
+
+    resp = client.get(
+        f"{BY_SOURCE}/kindergarten/46",
+        headers={"If-None-Match": '"v1-deadbeefdeadbeef"'},
+    )
+
+    assert resp.status_code == 200
+    assert set(resp.json().keys()) == DETAIL_KEYS
+
+
+def test_by_source_database_error_returns_503(caplog: pytest.LogCaptureFixture) -> None:
+    class _BrokenSession:
+        def execute(self, *args, **kwargs):
+            del args, kwargs
+            raise OperationalError("SELECT", {}, Exception("boom"))
+
+        def close(self) -> None:
+            pass
+
+    def _broken_get_db():
+        session = _BrokenSession()
+        try:
+            yield session
+        finally:
+            session.close()
+
+    app.dependency_overrides[institutions_module.get_db] = _broken_get_db
+    try:
+        client = TestClient(app, raise_server_exceptions=False)
+        with caplog.at_level("ERROR"):
+            resp = client.get(f"{BY_SOURCE}/kindergarten/46")
+        assert resp.status_code == 503
+        assert resp.json() == {"status": "degraded", "error": "database unreachable"}
+        assert any("database error" in rec.message for rec in caplog.records)
+    finally:
+        app.dependency_overrides.pop(institutions_module.get_db, None)
+
+
 def test_detail_database_error_returns_503(caplog: pytest.LogCaptureFixture) -> None:
     class _BrokenSession:
         def execute(self, *args, **kwargs):

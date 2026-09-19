@@ -87,8 +87,9 @@ All routes under `/api`, JSON responses, GETs only.
 | `GET /api/health` | DB-backed liveness probe. |
 | `GET /api/streets` | Bulk dump of all streets (~2,272 rows). ETag + 1h Cache-Control. |
 | `GET /api/addresses` | Bulk dump of all addresses (~49,254 rows). ETag + 1h Cache-Control. |
-| `GET /api/institutions` | All institutions in browse order. ETag + 1h Cache-Control. |
-| `GET /api/institutions/{id}` | One institution profile + served addresses grouped by street. |
+| `GET /api/institutions` | All institutions in browse order, each with `has_infant_group` and the main building's `location`. ETag + 1h Cache-Control. |
+| `GET /api/institutions/{id}` | One enriched institution profile: address, contacts, `district_code`, `has_infant_group`, the main building's `location`, every `branch` building, and served addresses grouped by street. |
+| `GET /api/institutions/by-source/{kind}/{external_id}` | The same profile addressed by the stable natural key instead of the re-ingest-reassigned serial. Identical body, ETag and cache headers; unknown pair → 404, invalid `kind` → 422. |
 | `GET /api/match?address_id={id}&kind={…}` | Canonical structured match response: `{address, results}`. `address` carries `district_code` and settlement context; each result carries institution/reception kind, offering, source URL, `match_basis`, and `has_infant_group`. |
 
 ETags are content-derived strong tags; clients revalidate with `If-None-Match` for 304s.

@@ -215,6 +215,49 @@ def test_institutions_schemas_hide_location_provenance(openapi: dict[str, Any]) 
         ), name
 
 
+BY_SOURCE_PATH = "/api/institutions/by-source/{kind}/{external_id}"
+
+
+def test_institutions_by_source_declares_kind_and_external_id_path_params(
+    openapi: dict[str, Any],
+) -> None:
+    op = openapi["paths"][BY_SOURCE_PATH]["get"]
+    params = {p["name"]: p for p in op.get("parameters", []) if p.get("in") == "path"}
+
+    assert set(params.keys()) == {"kind", "external_id"}
+    assert params["kind"]["required"] is True
+    assert _enum_values(openapi, params["kind"]["schema"]) == EXPECTED_KINDS
+    assert params["external_id"]["required"] is True
+    assert params["external_id"]["schema"]["type"] == "string"
+    assert "maxLength" not in params["external_id"]["schema"]
+
+    # The id route is untouched by the extraction.
+    id_op = openapi["paths"]["/api/institutions/{institution_id}"]["get"]
+    id_params = {
+        p["name"]: p for p in id_op.get("parameters", []) if p.get("in") == "path"
+    }
+    assert set(id_params.keys()) == {"institution_id"}
+    assert id_params["institution_id"]["schema"]["type"] == "integer"
+    assert id_params["institution_id"]["schema"]["minimum"] == 1
+
+
+def test_institutions_by_source_returns_institution_detail_schema(
+    openapi: dict[str, Any],
+) -> None:
+    by_source = openapi["paths"][BY_SOURCE_PATH]["get"]
+    by_id = openapi["paths"]["/api/institutions/{institution_id}"]["get"]
+
+    by_source_ref = by_source["responses"]["200"]["content"]["application/json"][
+        "schema"
+    ]["$ref"]
+    by_id_ref = by_id["responses"]["200"]["content"]["application/json"]["schema"][
+        "$ref"
+    ]
+
+    assert by_source_ref == by_id_ref
+    assert by_source_ref.endswith("/InstitutionDetail")
+
+
 def test_institutions_kind_resolves_to_expected_enum_values(
     openapi: dict[str, Any],
 ) -> None:
