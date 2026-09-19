@@ -19,8 +19,8 @@ small-to-medium pull request and maps to exactly one plan under
 
 | # | Epic | Phases | Dependencies | Status |
 |---|------|--------|--------------|--------|
-| 1 | [Institution data foundation](./01-institution-data-foundation.md) | 3 | — | In progress |
-| 2 | [Free-places API](./02-free-places-api.md) | 1 | Epic 01 | Blocked |
+| 1 | [Institution data foundation](./01-institution-data-foundation.md) | 3 | — | Done |
+| 2 | [Free-places API](./02-free-places-api.md) | 1 | Epic 01 | Ready for dev |
 
 ## Other repos
 
