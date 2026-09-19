@@ -4,7 +4,7 @@ validation, and DB error -> 503.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 import pytest
 from fastapi.testclient import TestClient
@@ -14,7 +14,14 @@ from sqlalchemy.pool import StaticPool
 
 from yasli import db
 from yasli.main import app
-from yasli.models import Address, Base, Institution, Street, address_institutions
+from yasli.models import (
+    Address,
+    Base,
+    Institution,
+    InstitutionLocation,
+    Street,
+    address_institutions,
+)
 from yasli.routes import institutions as institutions_module
 
 CACHE_CONTROL = "public, max-age=3600, stale-while-revalidate=86400"
@@ -35,8 +42,12 @@ DETAIL_KEYS = {
     "website",
     "district_code",
     "has_infant_group",
+    "location",
+    "branches",
     "coverage",
 }
+BRANCH_KEYS = {"label", "address", "location"}
+LOCATION_KEYS = {"lat", "lon", "precision"}
 CONTACT_FIELDS = ("address", "phone", "email", "director", "website", "district_code")
 STREET_KEYS = {"id", "city", "raw_name", "street_part", "type_marker"}
 ADDRESS_KEYS = {"id", "number_int", "number_suffix", "entrance"}
@@ -120,6 +131,74 @@ def _link_addresses(_client: TestClient, institution_id: int, address_ids: list[
             ],
         )
         session.commit()
+
+
+def _seed_locations(_client: TestClient, rows: list[dict[str, object]]) -> None:
+    """Insert `institution_locations` rows, defaulting the provenance columns.
+
+    `label`/`address` default to the stored empty-string sentinel and
+    `precision` follows the CHECK constraint: `none` exactly when there is no
+    coordinate.
+    """
+    assert db._SessionLocal is not None
+    with db._SessionLocal() as session:
+        for row in rows:
+            payload = dict(row)
+            payload.setdefault("role", "main")
+            payload.setdefault("label", "")
+            payload.setdefault("address", "")
+            payload.setdefault("lat", None)
+            payload.setdefault("lon", None)
+            payload.setdefault(
+                "precision", "none" if payload["lat"] is None else "building"
+            )
+            payload.setdefault("source", "manual")
+            payload.setdefault("verification", "human")
+            payload.setdefault("verified_at", date(2026, 9, 15))
+            session.add(InstitutionLocation(**payload))
+        session.commit()
+
+
+# ДГ№13 "Мир" as the committed reference file has it: a pinned main building
+# and four pinned branches, one of them on the main building's street.
+DG13_MAIN = (43.209589, 27.926883)
+DG13_BRANCHES = (
+    ("бул. Княз Борис I, 109", 43.209885, 27.928446),
+    ("ул. Н. Михайловски 1А", 43.209341, 27.926574),
+    ("ул. Тодор Икономов 36", 43.210211, 27.928085),
+    ("ул. Тодор Икономов, 26", 43.209883, 27.927021),
+)
+
+
+def _seed_dg13(client: TestClient) -> None:
+    _seed_institutions(
+        client,
+        [{"id": 13, "kind": "kindergarten", "external_id": "46", "name": "ДГ№13"}],
+    )
+    _seed_locations(
+        client,
+        [
+            {
+                "kind": "kindergarten",
+                "external_id": "46",
+                "role": "main",
+                "address": 'гр. Варна, ул."Никола Михайловски" №6',
+                "lat": DG13_MAIN[0],
+                "lon": DG13_MAIN[1],
+            },
+            *[
+                {
+                    "kind": "kindergarten",
+                    "external_id": "46",
+                    "role": "branch",
+                    "address": address,
+                    "lat": lat,
+                    "lon": lon,
+                }
+                for address, lat, lon in DG13_BRANCHES
+            ],
+        ],
+    )
 
 
 def _seed_detail_fixture(client: TestClient) -> None:
@@ -416,6 +495,155 @@ def test_detail_etag_changes_when_contact_changes(client: TestClient) -> None:
 
     assert second.json()["phone"] == "052/999-999"
     assert second.headers["etag"] != first
+
+
+def test_detail_location_is_main_pin_as_floats(client: TestClient) -> None:
+    _seed_dg13(client)
+
+    body = client.get("/api/institutions/13").json()
+
+    assert set(body["location"].keys()) == LOCATION_KEYS
+    assert body["location"] == {
+        "lat": 43.209589,
+        "lon": 27.926883,
+        "precision": "building",
+    }
+    assert isinstance(body["location"]["lat"], float)
+    assert isinstance(body["location"]["lon"], float)
+
+
+def test_detail_location_null_without_pin(client: TestClient) -> None:
+    _seed_institutions(
+        client,
+        [
+            {"id": 1, "kind": "kindergarten", "external_id": "unpinned"},
+            {"id": 2, "kind": "kindergarten", "external_id": "no-row"},
+        ],
+    )
+    _seed_locations(
+        client,
+        [{"kind": "kindergarten", "external_id": "unpinned", "role": "main"}],
+    )
+
+    unpinned = client.get("/api/institutions/1").json()
+    missing = client.get("/api/institutions/2").json()
+
+    assert unpinned["location"] is None
+    assert unpinned["branches"] == []
+    assert missing["location"] is None
+    assert missing["branches"] == []
+
+
+def test_detail_branches_shape_and_blank_to_null(client: TestClient) -> None:
+    _seed_dg13(client)
+    _seed_locations(
+        client,
+        [
+            {
+                "kind": "kindergarten",
+                "external_id": "46",
+                "role": "branch",
+                "label": "Annex",
+            }
+        ],
+    )
+
+    branches = client.get("/api/institutions/13").json()["branches"]
+
+    for branch in branches:
+        assert set(branch.keys()) == BRANCH_KEYS
+    addressed = {branch["address"]: branch for branch in branches if branch["address"]}
+    assert set(addressed) == {address for address, _, _ in DG13_BRANCHES}
+    for branch in addressed.values():
+        assert branch["label"] is None
+        assert branch["location"]["precision"] == "building"
+    name_only = next(branch for branch in branches if branch["label"] == "Annex")
+    assert name_only["address"] is None
+    assert name_only["location"] is None
+
+
+def test_detail_branches_ordered_by_label_then_address(client: TestClient) -> None:
+    _seed_institutions(client, [{"id": 1, "kind": "kindergarten", "external_id": "ord"}])
+    _seed_locations(
+        client,
+        [
+            {"kind": "kindergarten", "external_id": "ord", "role": "branch", **row}
+            for row in (
+                {"label": "Zeta"},
+                {"label": "Annex", "address": "Gamma 3"},
+                {"address": "Beta 2"},
+                {"label": "Annex"},
+                {"address": "Alpha 1"},
+            )
+        ],
+    )
+
+    first = client.get("/api/institutions/1")
+    second = client.get("/api/institutions/1")
+    branches = first.json()["branches"]
+
+    assert [(b["label"], b["address"]) for b in branches] == [
+        (None, "Alpha 1"),
+        (None, "Beta 2"),
+        ("Annex", None),
+        ("Annex", "Gamma 3"),
+        ("Zeta", None),
+    ]
+    assert first.content == second.content
+
+
+def test_detail_branches_exclude_main(client: TestClient) -> None:
+    _seed_dg13(client)
+
+    body = client.get("/api/institutions/13").json()
+
+    assert len(body["branches"]) == len(DG13_BRANCHES)
+    main_address = 'гр. Варна, ул."Никола Михайловски" №6'
+    assert all(branch["address"] != main_address for branch in body["branches"])
+
+
+def test_detail_etag_changes_when_location_changes(client: TestClient) -> None:
+    _seed_dg13(client)
+    first = client.get("/api/institutions/13").headers["etag"]
+
+    assert db._SessionLocal is not None
+    with db._SessionLocal() as session:
+        session.execute(
+            update(InstitutionLocation)
+            .where(
+                InstitutionLocation.kind == "kindergarten",
+                InstitutionLocation.external_id == "46",
+                InstitutionLocation.role == "main",
+            )
+            .values(lat=43.200000)
+        )
+        session.commit()
+    moved = client.get("/api/institutions/13").headers["etag"]
+
+    _seed_locations(
+        client,
+        [
+            {
+                "kind": "kindergarten",
+                "external_id": "46",
+                "role": "branch",
+                "label": "New annex",
+            }
+        ],
+    )
+    added = client.get("/api/institutions/13").headers["etag"]
+
+    assert moved != first
+    assert added != moved
+
+
+def test_detail_does_not_leak_location_provenance(client: TestClient) -> None:
+    _seed_dg13(client)
+
+    raw = client.get("/api/institutions/13").text
+
+    for name in ("source", "verification", "verified_at", "role"):
+        assert f'"{name}"' not in raw
 
 
 def test_detail_institution_with_no_coverage_returns_empty_array(

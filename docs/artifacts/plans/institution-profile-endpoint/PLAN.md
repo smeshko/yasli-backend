@@ -176,7 +176,7 @@ Task state lives here. Tasks are appended by `scripts/add_task.py` and
 `scripts/add_final_task.py`. Update the checkboxes as work progresses.
 
 - [x] TASK-001: Add address, contacts, district and the infant flag to the detail response
-- [ ] TASK-002: Add location and branches to the detail response (depends on TASK-001)
+- [x] TASK-002: Add location and branches to the detail response (depends on TASK-001)
 - [ ] TASK-003: Add the by-source detail route (depends on TASK-002)
 - [ ] TASK-004: Add the infant flag and location to the list response (depends on TASK-002)
 - [ ] TASK-005: Final Validation
