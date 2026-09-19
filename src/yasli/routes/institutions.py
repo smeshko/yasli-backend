@@ -1,7 +1,10 @@
-"""GET /institutions and /institutions/{id} institution read endpoints.
+"""Institution read endpoints: the browse list and the detail profile.
 
 Mounted under `/api` by `yasli.main`, so the public paths are
-`/api/institutions` and `/api/institutions/{institution_id}`.
+`/api/institutions`, `/api/institutions/{institution_id}` and
+`/api/institutions/by-source/{kind}/{external_id}` — the last two return the
+same payload, built by one function, addressed by the database serial and by
+the stable natural key respectively.
 The detail is the enriched institution profile: the snapshot columns, the
 address, contact and district metadata the `institutions` table stores, and
 the buildings the institution occupies, read from `institution_locations` by
@@ -269,18 +272,11 @@ def list_institutions(
     return _json_response(body, headers)
 
 
-@router.get("/institutions/{institution_id}", response_model=InstitutionDetail)
-def get_institution(
-    institution_id: int = Path(..., ge=1, description="institutions.id"),
-    session: Session = Depends(get_db),
-    if_none_match: str | None = Header(default=None, alias="If-None-Match"),
-) -> Response | JSONResponse:
-    institution_row = session.execute(
-        select(*_INSTITUTION_COLUMNS).where(Institution.id == institution_id)
-    ).first()
-    if institution_row is None:
-        return JSONResponse(status_code=404, content={"error": "institution_not_found"})
+def _institution_row(session: Session, *where: Any) -> Any:
+    return session.execute(select(*_INSTITUTION_COLUMNS).where(*where)).first()
 
+
+def _coverage_for(session: Session, institution_id: int) -> list[CoverageGroup]:
     coverage_rows = session.execute(
         select(
             Street.id.label("street_id"),
@@ -307,10 +303,6 @@ def get_institution(
             Address.id.asc(),
         )
     ).all()
-
-    location, branches = _locations_for(
-        session, institution_row.kind, institution_row.external_id
-    )
 
     coverage: list[CoverageGroup] = []
     current_street_id: int | None = None
@@ -339,7 +331,16 @@ def get_institution(
                 entrance=row.entrance,
             )
         )
+    return coverage
 
+
+def _detail_response(
+    session: Session, institution_row: Any, if_none_match: str | None
+) -> Response:
+    """The one detail payload: both handlers are a lookup plus this call."""
+    location, branches = _locations_for(
+        session, institution_row.kind, institution_row.external_id
+    )
     detail = InstitutionDetail(
         id=institution_row.id,
         external_id=institution_row.external_id,
@@ -356,7 +357,7 @@ def get_institution(
         has_infant_group=institution_row.has_infant_group,
         location=location,
         branches=branches,
-        coverage=coverage,
+        coverage=_coverage_for(session, institution_row.id),
     )
     body = _json_bytes(detail)
     etag = _etag(body)
@@ -365,3 +366,52 @@ def get_institution(
     if not_modified is not None:
         return not_modified
     return _json_response(body, headers)
+
+
+def _not_found() -> JSONResponse:
+    return JSONResponse(status_code=404, content={"error": "institution_not_found"})
+
+
+@router.get("/institutions/{institution_id}", response_model=InstitutionDetail)
+def get_institution(
+    institution_id: int = Path(..., ge=1, description="institutions.id"),
+    session: Session = Depends(get_db),
+    if_none_match: str | None = Header(default=None, alias="If-None-Match"),
+) -> Response | JSONResponse:
+    """The detail by database serial.
+
+    `{institution_id}` matches exactly one path segment, so the three-segment
+    by-source path below can never be captured here regardless of registration
+    order. The reverse — `/api/institutions/by-source` with nothing after it —
+    does land here and returns 422, because `"by-source"` is not an integer.
+    """
+    institution_row = _institution_row(session, Institution.id == institution_id)
+    if institution_row is None:
+        return _not_found()
+    return _detail_response(session, institution_row, if_none_match)
+
+
+@router.get(
+    "/institutions/by-source/{kind}/{external_id}", response_model=InstitutionDetail
+)
+def get_institution_by_source(
+    kind: Kind = Path(..., description="institutions.kind"),
+    external_id: str = Path(..., description="institutions.external_id"),
+    session: Session = Depends(get_db),
+    if_none_match: str | None = Header(default=None, alias="If-None-Match"),
+) -> Response | JSONResponse:
+    """The same detail by the stable natural key `(kind, external_id)`.
+
+    `institutions.id` is a serial reassigned on every re-ingest; this pair is
+    not, so the frontend addresses a page by it. `external_id` carries no
+    length constraint: a value longer than the column is "no such
+    institution", not a malformed request.
+    """
+    institution_row = _institution_row(
+        session,
+        Institution.kind == kind,
+        Institution.external_id == external_id,
+    )
+    if institution_row is None:
+        return _not_found()
+    return _detail_response(session, institution_row, if_none_match)
