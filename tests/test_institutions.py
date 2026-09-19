@@ -25,7 +25,16 @@ from yasli.models import (
 from yasli.routes import institutions as institutions_module
 
 CACHE_CONTROL = "public, max-age=3600, stale-while-revalidate=86400"
-LIST_KEYS = {"id", "external_id", "name", "kind", "source_url", "last_seen_at"}
+LIST_KEYS = {
+    "id",
+    "external_id",
+    "name",
+    "kind",
+    "source_url",
+    "last_seen_at",
+    "has_infant_group",
+    "location",
+}
 # Declared independently of LIST_KEYS: the two payloads stop being a subset of
 # one another once the detail carries contacts the list does not.
 DETAIL_KEYS = {
@@ -279,10 +288,95 @@ def test_list_does_not_include_coverage_or_server_only_fields(client: TestClient
     body = client.get("/api/institutions").json()
 
     assert body
-    assert all("coverage" not in item for item in body)
-    assert all("search_norm" not in item for item in body)
-    assert all("address_id" not in item for item in body)
-    assert all("institution_id" not in item for item in body)
+    for name in (
+        "coverage",
+        "branches",
+        "search_norm",
+        "address_id",
+        "institution_id",
+        "source",
+        "verification",
+        "verified_at",
+        "role",
+    ):
+        assert all(name not in item for item in body), name
+
+
+def test_list_location_from_main_row_or_null(client: TestClient) -> None:
+    _seed_institutions(
+        client,
+        [
+            {"id": 1, "kind": "nursery", "external_id": "pinned", "name": "Alpha"},
+            {"id": 2, "kind": "nursery", "external_id": "unpinned", "name": "Beta"},
+            {"id": 3, "kind": "nursery", "external_id": "no-row", "name": "Gamma"},
+        ],
+    )
+    _seed_locations(
+        client,
+        [
+            {
+                "kind": "nursery",
+                "external_id": "pinned",
+                "lat": 43.209589,
+                "lon": 27.926883,
+            },
+            {"kind": "nursery", "external_id": "unpinned"},
+        ],
+    )
+
+    body = client.get("/api/institutions").json()
+
+    assert [item["id"] for item in body] == [1, 2, 3]
+    assert body[0]["location"] == {
+        "lat": 43.209589,
+        "lon": 27.926883,
+        "precision": "building",
+    }
+    assert body[1]["location"] is None
+    assert body[2]["location"] is None
+
+
+def test_list_does_not_duplicate_institutions_with_branches(client: TestClient) -> None:
+    _seed_dg13(client)
+
+    body = client.get("/api/institutions").json()
+
+    assert [item["id"] for item in body] == [13]
+    assert body[0]["location"]["precision"] == "building"
+
+
+def test_list_has_infant_group_reflects_column(client: TestClient) -> None:
+    _seed_institutions(
+        client,
+        [
+            {"id": 1, "name": "Alpha", "has_infant_group": True},
+            {"id": 2, "name": "Beta"},
+        ],
+    )
+
+    body = client.get("/api/institutions").json()
+
+    assert [item["has_infant_group"] for item in body] == [True, False]
+
+
+def test_list_etag_changes_when_location_changes(client: TestClient) -> None:
+    _seed_dg13(client)
+    first = client.get("/api/institutions").headers["etag"]
+
+    assert db._SessionLocal is not None
+    with db._SessionLocal() as session:
+        session.execute(
+            update(InstitutionLocation)
+            .where(
+                InstitutionLocation.kind == "kindergarten",
+                InstitutionLocation.external_id == "46",
+                InstitutionLocation.role == "main",
+            )
+            .values(lat=43.200000)
+        )
+        session.commit()
+
+    assert client.get("/api/institutions").headers["etag"] != first
 
 
 def test_empty_database_returns_200_empty_array_with_etag(client: TestClient) -> None:

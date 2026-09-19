@@ -25,7 +25,7 @@ from fastapi import APIRouter, Depends, Header, Path, Response
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from sqlalchemy import case, nullslast, select
+from sqlalchemy import and_, case, nullslast, select
 from sqlalchemy.orm import Session
 
 from yasli.db import get_db
@@ -65,6 +65,8 @@ class InstitutionListItem(BaseModel):
     kind: Kind
     source_url: str
     last_seen_at: datetime
+    has_infant_group: bool
+    location: Location | None
 
 
 class StreetSummary(BaseModel):
@@ -230,6 +232,8 @@ def _institution_item(row: Any) -> InstitutionListItem:
         kind=row.kind,
         source_url=row.source_url,
         last_seen_at=row.last_seen_at,
+        has_infant_group=row.has_infant_group,
+        location=_location(row.lat, row.lon, row.precision),
     )
 
 
@@ -252,6 +256,23 @@ def list_institutions(
             Institution.kind,
             Institution.source_url,
             Institution.last_seen_at,
+            Institution.has_infant_group,
+            InstitutionLocation.lat,
+            InstitutionLocation.lon,
+            InstitutionLocation.precision,
+        )
+        # `uq_institution_locations_main` is a partial unique index on
+        # (kind, external_id) WHERE role = 'main', so this join matches at
+        # most one row and cannot multiply list items. `role == "main"` must
+        # stay in the ON clause: in a WHERE clause it would turn the outer
+        # join into an inner one and drop every unlocated institution.
+        .outerjoin(
+            InstitutionLocation,
+            and_(
+                InstitutionLocation.kind == Institution.kind,
+                InstitutionLocation.external_id == Institution.external_id,
+                InstitutionLocation.role == "main",
+            ),
         )
         .order_by(
             kind_order,
