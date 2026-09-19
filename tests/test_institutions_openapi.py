@@ -26,8 +26,13 @@ DETAIL_KEYS = {
     "website",
     "district_code",
     "has_infant_group",
+    "location",
+    "branches",
     "coverage",
 }
+BRANCH_KEYS = {"label", "address", "location"}
+LOCATION_KEYS = {"lat", "lon", "precision"}
+EXPECTED_PRECISIONS = {"building", "approximate"}
 NULLABLE_DETAIL_FIELDS = (
     "address",
     "phone",
@@ -164,6 +169,50 @@ def test_institutions_detail_new_fields_are_required_nullable(
     )
     assert "has_infant_group" in required
     assert detail_schema["properties"]["has_infant_group"]["type"] == "boolean"
+
+
+def _any_of_refs(schema: dict[str, Any]) -> set[str]:
+    return {
+        item["$ref"].rsplit("/", 1)[-1]
+        for item in schema.get("anyOf", [])
+        if "$ref" in item
+    }
+
+
+def test_institutions_location_and_branch_schemas(openapi: dict[str, Any]) -> None:
+    detail_schema = _detail_schema(openapi)
+    required = set(detail_schema["required"])
+    location_schema = openapi["components"]["schemas"]["Location"]
+    branch_schema = openapi["components"]["schemas"]["Branch"]
+
+    assert set(location_schema["properties"].keys()) == LOCATION_KEYS
+    assert (
+        _enum_values(openapi, location_schema["properties"]["precision"])
+        == EXPECTED_PRECISIONS
+    )
+
+    assert set(branch_schema["properties"].keys()) == BRANCH_KEYS
+    branch_required = set(branch_schema["required"])
+    for name in BRANCH_KEYS:
+        assert name in branch_required, name
+        assert _admits_null(openapi, branch_schema["properties"][name]), name
+    assert _any_of_refs(branch_schema["properties"]["location"]) == {"Location"}
+
+    assert "location" in required
+    assert _admits_null(openapi, detail_schema["properties"]["location"])
+    assert _any_of_refs(detail_schema["properties"]["location"]) == {"Location"}
+    assert "branches" in required
+    branches = detail_schema["properties"]["branches"]
+    assert branches["type"] == "array"
+    assert branches["items"]["$ref"].endswith("/Branch")
+
+
+def test_institutions_schemas_hide_location_provenance(openapi: dict[str, Any]) -> None:
+    for name in ("Location", "Branch", "InstitutionDetail"):
+        properties = set(openapi["components"]["schemas"][name]["properties"])
+        assert properties.isdisjoint(
+            {"source", "verification", "verified_at", "role"}
+        ), name
 
 
 def test_institutions_kind_resolves_to_expected_enum_values(

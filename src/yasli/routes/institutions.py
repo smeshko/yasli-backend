@@ -2,8 +2,10 @@
 
 Mounted under `/api` by `yasli.main`, so the public paths are
 `/api/institutions` and `/api/institutions/{institution_id}`.
-The detail is the enriched institution profile: the snapshot columns plus the
-address, contact and district metadata the `institutions` table stores.
+The detail is the enriched institution profile: the snapshot columns, the
+address, contact and district metadata the `institutions` table stores, and
+the buildings the institution occupies, read from `institution_locations` by
+the natural key `(kind, external_id)`.
 Both responses are deterministic snapshot views with strong content-derived
 ETags and the same cache headers used by the bulk dump endpoints.
 """
@@ -13,7 +15,8 @@ from __future__ import annotations
 import hashlib
 import json
 from datetime import datetime
-from typing import Any
+from decimal import Decimal
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, Header, Path, Response
 from fastapi.encoders import jsonable_encoder
@@ -25,8 +28,9 @@ from sqlalchemy.orm import Session
 from yasli.db import get_db
 from yasli.models.address import Address, address_institutions
 from yasli.models.institution import Institution
+from yasli.models.institution_location import InstitutionLocation
 from yasli.models.street import Street
-from yasli.models.types import DistrictCode, Kind
+from yasli.models.types import DistrictCode, Kind, LocationPrecision
 
 router = APIRouter()
 
@@ -80,6 +84,20 @@ class CoverageGroup(BaseModel):
     addresses: list[InstitutionAddress]
 
 
+class Location(BaseModel):
+    lat: float
+    lon: float
+    # `none` is deliberately absent: a row with that precision has no
+    # coordinate (CHECK constraint), and an absent pin is `location: null`.
+    precision: Literal["building", "approximate"]
+
+
+class Branch(BaseModel):
+    label: str | None
+    address: str | None
+    location: Location | None
+
+
 class InstitutionDetail(BaseModel):
     # Field order is JSON key order: the body is serialised from this model by
     # hand, and the ETag hashes exactly those bytes.
@@ -99,6 +117,8 @@ class InstitutionDetail(BaseModel):
     website: str | None
     district_code: DistrictCode | None
     has_infant_group: bool
+    location: Location | None
+    branches: list[Branch]
     coverage: list[CoverageGroup]
 
 
@@ -135,6 +155,68 @@ def _json_response(body: bytes, headers: dict[str, str]) -> Response:
         media_type="application/json",
         headers=headers,
     )
+
+
+def _location(
+    lat: Decimal | None, lon: Decimal | None, precision: LocationPrecision
+) -> Location | None:
+    """A pin, or `None` when the row carries no coordinate.
+
+    `float()` is explicit: `jsonable_encoder` would render an integral
+    `Decimal` as an int, which is not what a coordinate is.
+    """
+    if lat is None or lon is None:
+        return None
+    return Location(lat=float(lat), lon=float(lon), precision=precision)
+
+
+def _blank_to_none(value: str) -> str | None:
+    """`institution_locations` stores an absent label/address as `""` so the
+    UNIQUE tuple constrains. That is storage, not a value."""
+    return value or None
+
+
+def _locations_for(
+    session: Session, kind: str, external_id: str
+) -> tuple[Location | None, list[Branch]]:
+    rows = session.execute(
+        select(
+            InstitutionLocation.role,
+            InstitutionLocation.label,
+            InstitutionLocation.address,
+            InstitutionLocation.lat,
+            InstitutionLocation.lon,
+            InstitutionLocation.precision,
+        )
+        .where(
+            InstitutionLocation.kind == kind,
+            InstitutionLocation.external_id == external_id,
+        )
+        # Never order by `id`: the loader truncates and reinserts, so it is
+        # reassigned on every run. The UNIQUE tuple makes (label, address)
+        # unique within one institution's branches.
+        .order_by(
+            case((InstitutionLocation.role == "main", 0), else_=1),
+            InstitutionLocation.label.asc(),
+            InstitutionLocation.address.asc(),
+        )
+    ).all()
+
+    location: Location | None = None
+    branches: list[Branch] = []
+    for row in rows:
+        if row.role == "main":
+            if location is None:
+                location = _location(row.lat, row.lon, row.precision)
+            continue
+        branches.append(
+            Branch(
+                label=_blank_to_none(row.label),
+                address=_blank_to_none(row.address),
+                location=_location(row.lat, row.lon, row.precision),
+            )
+        )
+    return location, branches
 
 
 def _institution_item(row: Any) -> InstitutionListItem:
@@ -226,6 +308,10 @@ def get_institution(
         )
     ).all()
 
+    location, branches = _locations_for(
+        session, institution_row.kind, institution_row.external_id
+    )
+
     coverage: list[CoverageGroup] = []
     current_street_id: int | None = None
     current_group: CoverageGroup | None = None
@@ -268,6 +354,8 @@ def get_institution(
         website=institution_row.website,
         district_code=institution_row.district_code,
         has_infant_group=institution_row.has_infant_group,
+        location=location,
+        branches=branches,
         coverage=coverage,
     )
     body = _json_bytes(detail)
