@@ -10,7 +10,16 @@ from fastapi.testclient import TestClient
 from yasli.main import app
 
 EXPECTED_KINDS = {"nursery", "kindergarten", "preschool"}
-LIST_KEYS = {"id", "external_id", "name", "kind", "source_url", "last_seen_at"}
+LIST_KEYS = {
+    "id",
+    "external_id",
+    "name",
+    "kind",
+    "source_url",
+    "last_seen_at",
+    "has_infant_group",
+    "location",
+}
 # Declared independently of LIST_KEYS: the detail carries contacts the list does not.
 DETAIL_KEYS = {
     "id",
@@ -69,7 +78,7 @@ def _enum_values(openapi: dict[str, Any], schema: dict[str, Any]) -> set[str]:
     return values
 
 
-def test_institutions_list_schema_has_exactly_six_fields(
+def test_institutions_list_schema_has_exactly_the_expected_fields(
     openapi: dict[str, Any],
 ) -> None:
     op = openapi["paths"]["/api/institutions"]["get"]
@@ -256,6 +265,21 @@ def test_institutions_by_source_returns_institution_detail_schema(
 
     assert by_source_ref == by_id_ref
     assert by_source_ref.endswith("/InstitutionDetail")
+
+
+def test_institutions_list_location_reuses_location_schema(
+    openapi: dict[str, Any],
+) -> None:
+    op = openapi["paths"]["/api/institutions"]["get"]
+    schema = op["responses"]["200"]["content"]["application/json"]["schema"]
+    item_schema = _resolve_schema(openapi, schema["items"])
+    required = set(item_schema["required"])
+
+    assert "location" in required
+    assert _admits_null(openapi, item_schema["properties"]["location"])
+    assert _any_of_refs(item_schema["properties"]["location"]) == {"Location"}
+    assert "has_infant_group" in required
+    assert item_schema["properties"]["has_infant_group"]["type"] == "boolean"
 
 
 def test_institutions_kind_resolves_to_expected_enum_values(
