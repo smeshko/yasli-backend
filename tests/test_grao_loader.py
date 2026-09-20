@@ -8,6 +8,7 @@ that the bulk-insert path lands rows on the typed ORM.
 
 from __future__ import annotations
 
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -232,3 +233,70 @@ def test_load_truncate_clears_previous_data(sqlite_session: Session) -> None:
         assert sqlite_session.query(GraoAddress).count() == 0  # type: ignore[attr-defined]
     finally:
         empty_path.unlink()
+
+
+# --- zip archive support -------------------------------------------------
+
+
+def _zip_of(tmp_path: Path, members: dict[str, bytes]) -> Path:
+    """Write a zip holding ``members`` and return its path."""
+    archive = tmp_path / "kads.zip"
+    with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as zf:
+        for name, payload in members.items():
+            zf.writestr(name, payload)
+    return archive
+
+
+def test_parse_file_zip_matches_extracted_text(tmp_path: Path) -> None:
+    """A .zip and the .txt inside it parse to identical rows."""
+    archive = _zip_of(tmp_path, {"kads-03-06.txt": FIXTURE.read_bytes()})
+    assert list(grao_loader.parse_file(archive)) == list(
+        grao_loader.parse_file(FIXTURE)
+    )
+
+
+def test_parse_file_zip_with_no_members_raises(tmp_path: Path) -> None:
+    archive = _zip_of(tmp_path, {})
+    with pytest.raises(grao_loader.ArchiveError, match="no files"):
+        list(grao_loader.parse_file(archive))
+
+
+def test_parse_file_zip_with_two_members_raises(tmp_path: Path) -> None:
+    archive = _zip_of(
+        tmp_path, {"a.txt": b"", "b.txt": b""}
+    )
+    with pytest.raises(grao_loader.ArchiveError, match="a.txt, b.txt"):
+        list(grao_loader.parse_file(archive))
+
+
+def test_cli_reports_archive_error_as_exit_3(tmp_path: Path) -> None:
+    """A malformed archive exits 3, not a zipfile traceback."""
+    archive = _zip_of(tmp_path, {"a.txt": b"", "b.txt": b""})
+    assert grao_loader.main([str(archive)]) == 3
+
+
+def test_default_archive_is_the_committed_zip() -> None:
+    """The CLI default resolves off the package, not the process CWD."""
+    assert grao_loader.DEFAULT_ARCHIVE.name == "kads-03-06.zip"
+    assert grao_loader.DEFAULT_ARCHIVE.parent.name == "grao"
+    assert grao_loader.DEFAULT_ARCHIVE.is_file()
+
+
+def test_committed_archive_parses_to_the_expected_shape() -> None:
+    """The committed archive is the artifact of record for local seeding."""
+    rows = list(grao_loader.parse_file(grao_loader.DEFAULT_ARCHIVE))
+    assert len(rows) == 47579
+    assert len({r["street_code"] for r in rows}) == 2071
+    assert {r["district_code"] for r in rows} == {"01", "02", "03", "04", "05"}
+
+
+def test_committed_archive_routes_the_vapcarov_case() -> None:
+    """YAS-21's verification address must carry район 02 (ПРИМОРСКИ)."""
+    rows = [
+        r
+        for r in grao_loader.parse_file(grao_loader.DEFAULT_ARCHIVE)
+        if r["street_raw"].startswith("УЛ.Н.Й.ВАПЦАРОВ") and r["number_int"] == 7
+    ]
+    assert rows, "УЛ.Н.Й.ВАПЦАРОВ 7 not found in the committed archive"
+    assert {r["district_code"] for r in rows} == {"02"}
+    assert "Г" in {r["entrance"] for r in rows}

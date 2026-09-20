@@ -4,10 +4,15 @@ Reads the windows-1251 plaintext Address Classifier (KADS) file published by
 Главна Дирекция ГРАО per Bulgarian election cycle and bulk-loads
 ``grao_addresses``.
 
-File acquisition is the operator's responsibility — the loader takes a
-local path, not a URL. Re-running the loader against the same file leaves
-``grao_addresses`` in the same observable state (TRUNCATE + bulk INSERT
-inside one transaction).
+The loader takes a local path, not a URL — the numeric ``varna.bg/upload/``
+id rotates per cycle, so acquiring a *new* file stays the operator's
+responsibility (``docs/OPERATIONS.md``). The cycle in use is committed as
+``data/grao/kads-03-06.zip`` and is the CLI's default, so a local database
+gets district data without anyone having to find the file first. Either
+suffix is accepted: a ``.zip`` has its single member read in memory and
+handed to the same windows-1251 decode as a ``.txt``. Re-running the loader
+against the same file leaves ``grao_addresses`` in the same observable
+state (TRUNCATE + bulk INSERT inside one transaction).
 
 The KADS layout is roughly:
 
@@ -39,6 +44,7 @@ import argparse
 import logging
 import re
 import sys
+import zipfile
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -48,10 +54,20 @@ from sqlalchemy import delete, insert, text
 from sqlalchemy.orm import Session
 
 from yasli.db import get_engine
+from yasli.ingest.municipality import REPO_ROOT
 from yasli.ingest.normalise import to_search_norm
 from yasli.models import GraoAddress
 
 log = logging.getLogger("yasli.ingest.grao_loader")
+
+# The committed archive for the current election cycle. Resolved off the
+# package (via REPO_ROOT) rather than the process CWD, because `just be-test`
+# and `just be-seed` run from different working directories.
+DEFAULT_ARCHIVE = REPO_ROOT / "data" / "grao" / "kads-03-06.zip"
+
+
+class ArchiveError(Exception):
+    """A ``.zip`` input is not a single-member KADS archive."""
 
 
 # Type markers stripped from street_raw before computing search_norm.
@@ -311,12 +327,43 @@ def parse_lines(raw_lines: Iterable[str]) -> Iterator[dict[str, Any]]:
         # Otherwise: unrecognized line, silently skipped.
 
 
+def _read_archive_member(path: Path) -> bytes:
+    """Return the bytes of the single member of the KADS ``.zip`` at ``path``.
+
+    Raises :class:`ArchiveError` when the archive holds anything other than
+    exactly one file, so the CLI reports a data problem rather than a
+    ``zipfile`` traceback.
+    """
+    try:
+        with zipfile.ZipFile(path) as archive:
+            members = [info for info in archive.infolist() if not info.is_dir()]
+            if not members:
+                raise ArchiveError(f"archive holds no files: {path}")
+            if len(members) > 1:
+                names = ", ".join(sorted(info.filename for info in members))
+                raise ArchiveError(
+                    f"archive holds {len(members)} files, expected exactly one "
+                    f"({names}): {path}"
+                )
+            return archive.read(members[0])
+    except zipfile.BadZipFile as exc:
+        raise ArchiveError(f"not a readable zip archive: {path} ({exc})") from exc
+
+
 def parse_file(path: Path) -> Iterator[dict[str, Any]]:
     """Decode ``path`` as windows-1251 and yield row dicts.
 
-    Raises :class:`UnicodeDecodeError` if the file is not valid windows-1251.
+    ``path`` is either the extracted plaintext or the published ``.zip``; the
+    archive branch only produces bytes, so both go through the same decode.
+
+    Raises :class:`UnicodeDecodeError` if the content is not valid
+    windows-1251, or :class:`ArchiveError` if a ``.zip`` is not a
+    single-member archive.
     """
-    raw_bytes = path.read_bytes()
+    if path.suffix.lower() == ".zip":
+        raw_bytes = _read_archive_member(path)
+    else:
+        raw_bytes = path.read_bytes()
     decoded = raw_bytes.decode("windows-1251")
     yield from parse_lines(decoded.splitlines())
 
@@ -327,7 +374,16 @@ def load(path: Path, session: Session) -> LoaderSummary:
     The whole operation runs inside the caller's transaction. On any error,
     rolling back leaves the previous contents intact.
     """
-    rows = list(parse_file(path))
+    return load_rows(list(parse_file(path)), session)
+
+
+def load_rows(rows: list[dict[str, Any]], session: Session) -> LoaderSummary:
+    """TRUNCATE ``grao_addresses`` and bulk-INSERT already-parsed ``rows``.
+
+    Split out of :func:`load` so a caller that has to decode before opening a
+    connection — the CLI does, so a mangled file never reaches the database —
+    does not parse the file twice.
+    """
     if session.bind is not None and session.bind.dialect.name == "postgresql":
         session.execute(text("TRUNCATE TABLE grao_addresses"))
     else:
@@ -346,27 +402,39 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="yasli.ingest.grao_loader",
         description=(
-            "Parse a ГРАО KADS plaintext file (windows-1251) and bulk-load "
-            "grao_addresses. Idempotent: TRUNCATE + INSERT inside one "
-            "transaction."
+            "Parse a ГРАО KADS file (the published .zip or the extracted "
+            "windows-1251 plaintext) and bulk-load grao_addresses. Idempotent: "
+            "TRUNCATE + INSERT inside one transaction."
         ),
     )
     parser.add_argument(
         "path",
         type=Path,
-        help="Local path to the extracted kads-03-06.txt plaintext file.",
+        nargs="?",
+        default=DEFAULT_ARCHIVE,
+        help=(
+            "Local path to the kads-03-06.zip archive or the extracted "
+            f".txt plaintext (default: {DEFAULT_ARCHIVE})."
+        ),
     )
     args = parser.parse_args(argv)
     if not args.path.exists():
         print(f"error: file not found: {args.path}", file=sys.stderr)
         return 2
     try:
-        engine = get_engine()
-        with Session(engine) as session, session.begin():
-            summary = load(args.path, session)
+        # Decode before opening a connection: a mangled file is a data
+        # problem, and the loader promises not to write anything when the
+        # input does not read.
+        rows = list(parse_file(args.path))
+    except ArchiveError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 3
     except UnicodeDecodeError as exc:
         print(f"error: file is not valid windows-1251: {exc}", file=sys.stderr)
         return 3
+    engine = get_engine()
+    with Session(engine) as session, session.begin():
+        summary = load_rows(rows, session)
     print(
         f"grao_loader done rows={summary.rows_loaded} "
         f"streets={summary.streets_parsed} skipped={summary.lines_skipped}",
