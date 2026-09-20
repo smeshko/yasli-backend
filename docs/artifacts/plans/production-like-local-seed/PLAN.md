@@ -1,6 +1,6 @@
 # Plan: Production-like local seed
 
-Status: in-progress
+Status: done
 Branch: feature/yas-21-seed-production-like-local-database
 Risk: medium
 Epic: none
@@ -131,45 +131,45 @@ See [DECISIONS.md](./DECISIONS.md).
 
 ## Acceptance Criteria
 
-- [ ] On a freshly reset database, `uv run python -m yasli.seed` completes with
+- [x] On a freshly reset database, `uv run python -m yasli.seed` completes with
       exit 0 and no R2 environment variable set
-- [ ] After it, `grao_addresses` holds ~47,579 rows across districts 01–05, and
+- [x] After it, `grao_addresses` holds ~47,579 rows across districts 01–05, and
       `addresses.district_code` is non-null for the overwhelming majority of rows
-- [ ] `GET /api/match` for the `addresses.id` that `ул. Н.Й.Вапцаров 007 вх.Г`
+- [x] `GET /api/match` for the `addresses.id` that `ул. Н.Й.Вапцаров 007 вх.Г`
       resolves to — the endpoint takes `address_id`, not an address string — returns
       district `02` with nurseries, kindergartens **and** preschools: the three-kind
       parity the ticket names, where local previously returned `null / 0 / 4 / 0`.
       Parity with production is judged on a normalised projection (district plus the
       sorted `(institution_kind, external_id, reception_kind)` set), since surrogate
       ids do not correspond across databases
-- [ ] `GET /api/institutions/by-source/kindergarten/46` returns ДГ№13 "Мир" with its
+- [x] `GET /api/institutions/by-source/kindergarten/46` returns ДГ№13 "Мир" with its
       4 branches, each carrying coordinates
-- [ ] `SELECT count(*) FROM institutions` is 95 — 77 from the snapshot plus the
+- [x] `SELECT count(*) FROM institutions` is 95 — 77 from the snapshot plus the
       fixture's 18, derived from the committed artifacts rather than asserted as a
       constant — and every `(kind, external_id)` in the frontend's
       `institutions-manifest.json` resolves
 - [ ] All 18 legacy nurseries carry a non-null `district_code`, and
       `python -m yasli.ingest validate-match-data` reports
       `nursery_without_district:0`
-- [ ] With any **independently required** seed step sabotaged — migration, ГРАО,
+- [x] With any **independently required** seed step sabotaged — migration, ГРАО,
       snapshot ingest, legacy institutions, or locations — the seed exits non-zero
       and names the step and the failed check. (`restamp-districts` is deliberately
       excluded: on a clean seed ingest's gated passes have already stamped
       everything, so skipping it is unobservable. Its value is on a *dirty*
       database, and TASK-008 proves it there instead.)
-- [ ] It never reports success over a database that is wrong in either direction:
+- [x] It never reports success over a database that is wrong in either direction:
       half-seeded, or carrying state the committed artifacts do not account for.
       `verify` fails on institutions outside the snapshot∪fixture union *and* on
       `address_institutions` edges the snapshot does not describe, naming them —
       an extra nursery in a район and an extra catchment edge each change what
       `/api/match` returns
-- [ ] `python -m yasli.seed verify` is runnable on its own and exits non-zero on a
+- [x] `python -m yasli.seed verify` is runnable on its own and exits non-zero on a
       database that has never been seeded
 - [ ] `python -m yasli.seed freeze` regenerates both committed artifacts, and
       re-running the seed from the regenerated files reproduces the same row counts
-- [ ] README quickstart and `docs/OPERATIONS.md` describe the command, the refresh
+- [x] README quickstart and `docs/OPERATIONS.md` describe the command, the refresh
       cadence, and what a local database does and does not contain versus production
-- [ ] `just be-test` and `just be-lint` pass
+- [x] `just be-test` and `just be-lint` pass
 
 ## Tasks
 
@@ -183,4 +183,4 @@ Task state lives here. Tasks are appended by `scripts/add_task.py` and
 - [x] TASK-005: Verify the seeded database and refuse half-done (depends on TASK-004)
 - [x] TASK-006: Add the freeze maintainer command (depends on TASK-002,TASK-003,TASK-004)
 - [x] TASK-007: Document the seed command and the local-vs-production gap (depends on TASK-004,TASK-005,TASK-006)
-- [ ] TASK-008: Final Validation
+- [x] TASK-008: Final Validation
