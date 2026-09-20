@@ -9,39 +9,12 @@ production-like local database has to carry.
 from __future__ import annotations
 
 import os
-from collections.abc import Iterator
 
 import pytest
-from sqlalchemy import Engine, create_engine, text
+from sqlalchemy import Engine, text
 
 from yasli import db as db_module
 from yasli.seed import runner
-
-
-@pytest.fixture(scope="module")
-def seeded(bare_postgres_url: str) -> Iterator[tuple[runner.SeedSummary, Engine]]:
-    """Run the full seed once; every assertion below reads its result.
-
-    ``DATABASE_URL`` is set rather than an engine injected, because that is
-    the real path: `migrations/env.py` resolves the URL through
-    `Settings()` on purpose, so Alembic and the backend share one env-var
-    contract.
-    """
-    previous = os.environ.get("DATABASE_URL")
-    os.environ["DATABASE_URL"] = bare_postgres_url
-    db_module._engine = None  # type: ignore[attr-defined]
-    db_module._SessionLocal = None  # type: ignore[attr-defined]
-    engine = create_engine(bare_postgres_url, future=True)
-    try:
-        yield runner.run_seed(), engine
-    finally:
-        engine.dispose()
-        if previous is None:
-            os.environ.pop("DATABASE_URL", None)
-        else:
-            os.environ["DATABASE_URL"] = previous
-        db_module._engine = None  # type: ignore[attr-defined]
-        db_module._SessionLocal = None  # type: ignore[attr-defined]
 
 
 @pytest.fixture(scope="module")

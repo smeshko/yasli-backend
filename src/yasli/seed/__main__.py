@@ -14,8 +14,12 @@ from __future__ import annotations
 import argparse
 import sys
 
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session
+
 from yasli.config import Settings
-from yasli.seed import runner
+from yasli.db import get_engine
+from yasli.seed import runner, verify
 
 
 def _emit_step(result: runner.StepResult) -> None:
@@ -23,6 +27,26 @@ def _emit_step(result: runner.StepResult) -> None:
         f"  {result.name:<22} {result.detail} ({result.elapsed_ms} ms)",
         flush=True,
     )
+
+
+def _run_verify_subcommand() -> int:
+    """Re-check a seeded database and name everything that is wrong with it."""
+    try:
+        Settings()
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return runner.EXIT_CONFIG
+
+    print("verifying the local database against the committed artifacts", flush=True)
+    try:
+        with Session(get_engine()) as session:
+            result = verify.run_checks(session)
+    except SQLAlchemyError as exc:
+        print(f"error: database error: {exc}", file=sys.stderr)
+        return runner.EXIT_DATABASE
+
+    print(verify.format_result(result), flush=True)
+    return 0 if result.ok else runner.EXIT_PRECONDITION
 
 
 def _run_seed_subcommand() -> int:
@@ -51,7 +75,11 @@ def _run_seed_subcommand() -> int:
         f"elapsed_ms={summary.elapsed_ms}",
         flush=True,
     )
-    return 0
+
+    # Verification is the seed's last act, not an optional follow-up: a
+    # command that reports success over a half-seeded database is the
+    # failure mode YAS-21 complains about.
+    return _run_verify_subcommand()
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -68,10 +96,20 @@ def main(argv: list[str] | None = None) -> int:
     subparsers.add_parser(
         "seed", help="Run the full seed (the default with no arguments)."
     )
+    subparsers.add_parser(
+        "verify",
+        help=(
+            "Re-check a seeded database against the committed artifacts and "
+            "exit non-zero naming what is missing. Runs automatically at the "
+            "end of a seed."
+        ),
+    )
     args = parser.parse_args(argv)
 
     if args.cmd is None or args.cmd == "seed":
         return _run_seed_subcommand()
+    if args.cmd == "verify":
+        return _run_verify_subcommand()
     parser.error(f"unknown subcommand: {args.cmd}")
     return runner.EXIT_CONFIG  # pragma: no cover - parser.error exits
 

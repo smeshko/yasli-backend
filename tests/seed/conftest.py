@@ -8,6 +8,7 @@ command YAS-21 asked for.
 
 from __future__ import annotations
 
+import os
 import subprocess
 from collections.abc import Iterator
 
@@ -27,7 +28,7 @@ def _docker_available() -> bool:
         return False
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="session")
 def bare_postgres_url() -> Iterator[str]:
     """A running Postgres with no schema at all; yields its URL."""
     try:
@@ -59,5 +60,33 @@ def bare_engine(bare_postgres_url: str) -> Iterator[Engine]:
         yield engine
     finally:
         engine.dispose()
+        db_module._engine = None  # type: ignore[attr-defined]
+        db_module._SessionLocal = None  # type: ignore[attr-defined]
+
+
+@pytest.fixture(scope="session")
+def seeded(bare_postgres_url: str) -> Iterator[tuple[object, Engine]]:
+    """Run the full seed once per session; yields (summary, engine).
+
+    ``DATABASE_URL`` is set rather than an engine injected, because that is
+    the real path: `migrations/env.py` resolves the URL through
+    `Settings()` on purpose, so Alembic and the backend share one env-var
+    contract.
+    """
+    from yasli.seed import runner
+
+    previous = os.environ.get("DATABASE_URL")
+    os.environ["DATABASE_URL"] = bare_postgres_url
+    db_module._engine = None  # type: ignore[attr-defined]
+    db_module._SessionLocal = None  # type: ignore[attr-defined]
+    engine = create_engine(bare_postgres_url, future=True)
+    try:
+        yield runner.run_seed(), engine
+    finally:
+        engine.dispose()
+        if previous is None:
+            os.environ.pop("DATABASE_URL", None)
+        else:
+            os.environ["DATABASE_URL"] = previous
         db_module._engine = None  # type: ignore[attr-defined]
         db_module._SessionLocal = None  # type: ignore[attr-defined]

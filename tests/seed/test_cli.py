@@ -14,6 +14,7 @@ from contextlib import redirect_stderr, redirect_stdout
 import pytest
 
 from yasli.seed import runner
+from yasli.seed import __main__ as cli
 from yasli.seed.__main__ import main
 
 
@@ -29,8 +30,20 @@ def _steps(failing: str | None = None, exc: Exception | None = None) -> list[run
     return [make(n) for n in ("alpha", "beta")]
 
 
-def _run(argv: list[str], steps: list[runner.Step], monkeypatch) -> tuple[int, str, str]:
+def _run(
+    argv: list[str],
+    steps: list[runner.Step],
+    monkeypatch,
+    verify_rc: int = 0,
+) -> tuple[int, str, str]:
+    """Drive the CLI over stub steps, with verification stubbed too.
+
+    Verification is the seed's last act and needs a real seeded database;
+    these tests are about the CLI's reporting and exit-code mapping, and
+    `test_verify.py` owns the checks themselves.
+    """
     monkeypatch.setattr(runner, "build_steps", lambda **kwargs: steps)
+    monkeypatch.setattr(cli, "_run_verify_subcommand", lambda: verify_rc)
     out, err = io.StringIO(), io.StringIO()
     with redirect_stdout(out), redirect_stderr(err):
         rc = main(argv)
@@ -73,3 +86,15 @@ def test_exit_codes_follow_the_ingest_convention(
 ) -> None:
     rc, _, _ = _run([], _steps(failing="alpha", exc=exception), monkeypatch)
     assert rc == expected
+
+
+def test_a_seed_whose_verification_fails_exits_non_zero(monkeypatch) -> None:
+    """`just be-seed` must not report success over a half-seeded database."""
+    rc, out, _ = _run([], _steps(), monkeypatch, verify_rc=runner.EXIT_PRECONDITION)
+    assert rc == runner.EXIT_PRECONDITION
+    assert "seed done" in out  # the steps ran; verification is what failed
+
+
+def test_verify_is_reachable_as_its_own_subcommand(monkeypatch) -> None:
+    monkeypatch.setattr(cli, "_run_verify_subcommand", lambda: 0)
+    assert main(["verify"]) == 0
