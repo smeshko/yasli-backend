@@ -70,13 +70,68 @@ reports the same 18 (and, unlike local, a non-zero `nursery_coverage_edges`
 — the legacy rows carry ~36k catchment edges there, which nursery routing
 ignores and which this fixture does not reproduce).
 
-### Refreshing it
+## Refreshing both files
 
-`python -m yasli.seed freeze` regenerates both files — the snapshot from R2
-and the fixture from a configured database. It is a deliberate
-maintainer action, not something CI does — each refresh adds ~760 KB to git
-history, and `verify` prints the `scraped_at` above and warns once it is
-more than 90 days old, so staleness is visible rather than silent.
+`python -m yasli.seed freeze` regenerates the pair — the snapshot from R2,
+the fixture from the configured database. It is a deliberate maintainer
+action, not something CI does: each refresh adds ~760 KB to git history,
+and `verify` prints the snapshot's `scraped_at` and warns once it is more
+than 90 days old, so staleness is visible rather than silent.
 
-A local database seeded from this file is **not** identical to production;
-`docs/OPERATIONS.md` records the differences that matter.
+It is the one command here that needs credentials. That is the point —
+the maintainer pays the credential cost once so every other developer pays
+none.
+
+```bash
+# See what would change; writes nothing.
+railway run --service backend-ingest -- python -m yasli.seed freeze --dry-run
+
+# Do it. Needs the four R2_* variables and read access to production.
+railway run --service backend-ingest -- python -m yasli.seed freeze
+
+# Then re-seed locally and confirm the row counts are unchanged.
+just db-reset && just be-seed
+```
+
+`railway run --service backend-ingest` supplies the `R2_*` variables, but
+its `DATABASE_URL` points at `postgres.railway.internal`, which does not
+resolve from a laptop. Pass the Postgres service's `DATABASE_PUBLIC_URL`
+instead — via a file or `railway connect`, not by pasting the URL into a
+shell history.
+
+| flag | effect |
+| --- | --- |
+| `--dry-run` | report what would change, write nothing |
+| `--snapshot-only` | refresh the snapshot; keep and re-check the committed fixture |
+| `--legacy-only` | re-derive the fixture against the committed snapshot; no R2 needed |
+| `--allow-shrink` | permit a derived fixture with fewer rows than the committed one |
+
+### The guards, and what they are for
+
+The two files are a **pair**, because the fixture loader upserts on
+`(kind, external_id)`. A fixture row whose key has since become a live
+snapshot row would overwrite current data with a months-old copy — that,
+not staleness, is the failure that costs data. So:
+
+- both candidates are built in a temp directory and checked for key
+  overlap **as a pair**; on overlap nothing is published, the command
+  exits 3 and names the colliding keys and the two ways out;
+- an **empty** derived fixture leaves the file untouched and says so, so a
+  maintainer pointed at their own local database cannot blank all 18 rows
+  in a way that looks like a legitimate refresh in review;
+- a **shrinking** fixture is refused without `--allow-shrink`, naming the
+  rows that would disappear — the empty-diff guard alone does not catch a
+  partial database;
+- the snapshot is gzipped with `mtime=0`, so an unchanged snapshot
+  produces a byte-identical file and a refresh shows no spurious diff.
+
+Publishing two files with two `os.replace` calls is **not** atomic. The
+window is two syscalls wide, and if the second rename fails the command
+says both files may now disagree and tells you to run
+`git checkout -- data/seed/`, rather than reporting success. See
+DECISIONS.md D8 for why a versioned-directory pointer swap was not taken.
+
+---
+
+A local database seeded from these files is **not** identical to
+production; `docs/OPERATIONS.md` records the differences that matter.
