@@ -179,7 +179,7 @@ Task state lives here. Tasks are appended by `scripts/add_task.py` and
 - [x] TASK-001: Load the ГРАО KADS file from a committed zip
 - [x] TASK-002: Ingest a snapshot from a committed local file
 - [x] TASK-003: Seed the 18 legacy nursery institutions
-- [ ] TASK-004: Add the yasli.seed orchestrator (depends on TASK-001,TASK-002,TASK-003)
+- [x] TASK-004: Add the yasli.seed orchestrator (depends on TASK-001,TASK-002,TASK-003)
 - [ ] TASK-005: Verify the seeded database and refuse half-done (depends on TASK-004)
 - [ ] TASK-006: Add the freeze maintainer command (depends on TASK-002,TASK-003,TASK-004)
 - [ ] TASK-007: Document the seed command and the local-vs-production gap (depends on TASK-004,TASK-005,TASK-006)
