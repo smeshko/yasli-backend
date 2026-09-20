@@ -1,6 +1,6 @@
 # Plan: Production-like local seed
 
-Status: draft
+Status: in-progress
 Branch: feature/yas-21-seed-production-like-local-database
 Risk: medium
 Epic: none
@@ -176,7 +176,7 @@ See [DECISIONS.md](./DECISIONS.md).
 Task state lives here. Tasks are appended by `scripts/add_task.py` and
 `scripts/add_final_task.py`. Update the checkboxes as work progresses.
 
-- [ ] TASK-001: Load the ГРАО KADS file from a committed zip
+- [x] TASK-001: Load the ГРАО KADS file from a committed zip
 - [ ] TASK-002: Ingest a snapshot from a committed local file
 - [ ] TASK-003: Seed the 18 legacy nursery institutions
 - [ ] TASK-004: Add the yasli.seed orchestrator (depends on TASK-001,TASK-002,TASK-003)
