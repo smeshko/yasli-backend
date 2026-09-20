@@ -1,11 +1,58 @@
 # Epic 02 — Free-places API
 
-Status: planned
+Status: deferred
 Created: 2026-08-17
+Deferred: 2026-09-19
 Depends on: Epic 01
 Project: institution-profiles
 Linear: YAS-2 (https://linear.app/ivo-tsonev/issue/YAS-2)
 Milestone: 56acf8f6-b6d9-4430-ae49-62e9aec24670
+
+## Deferral (2026-09-19)
+
+Not being built. The epic was scoped from a single measurement taken inside
+the admission cycle; measured again out of season, the source carries nothing
+worth serving.
+
+Measured 2026-09-19, fetching all four receptions directly:
+
+| Reception | Rows | Rows with any free place | Places total | `KLAS_DATE` | `IS_FINAL` |
+| --- | --- | --- | --- | --- | --- |
+| `garden` | 70 | 23 | 151 | 23-06-2026 | `1` |
+| `infant` | 20 | 7 | 26 | 23-06-2026 | `1` |
+| `pg` | 13 | 11 | 70 | 23-06-2026 | `1` |
+| `jasla` | — | — | — | HTTP 403 (HTML error page, not JSON) | — |
+
+- `KLAS_DATE` is **88 days old**, and `IS_FINAL = 1` — the round it describes
+  closed in June.
+- The `garden` payload fetched today is **byte-identical** (26,813 B) to the
+  copy captured on 2026-08-17 in `scripts/fixtures/free_places_garden.json`.
+  The table did not move in a month.
+
+So for roughly nine months a year the endpoint would serve a frozen historical
+artifact, and the epic's own mitigation for that — "the copy must lead with the
+date, not the number" — is an admission that the number is usually not the
+answer. Against that: a fetch/parse module for malformed free-form HTML, name
+matching for 103 rows, branch attribution for 15, a cache with a stale-serve
+path, and a standing liability on a third party's table shape.
+
+Nothing depends on this epic inside the backend. The one consumer is
+[frontend epic 02](../../../../frontend/docs/artifacts/epics/02-institution-directory-and-availability.md)
+phase 2.2, a block on the detail page — not the page itself. That phase needs
+its own decision.
+
+**If this is revisited** — the natural moment is inside the next cycle, around
+April, when the table is live and it is possible to see whether `KLAS_DATE`
+moves weekly or daily and whether `IS_FINAL` flips mid-round. The groundwork
+survives: the payload shape is recorded below and in research §1.1, a captured
+fixture is committed, and `scripts/seed_institution_locations.py` already
+parses this table's branch rows (`parse_branch_rows`, `dg_number`) and matches
+them to institutions by ДГ number.
+
+The phase below is left as written, as the specification to pick back up.
+
+Linear has no deferred state, so YAS-2 and YAS-9 are tracked there as
+`Canceled`, each carrying these measurements as a comment.
 
 ## Overview
 
@@ -39,7 +86,7 @@ cache and its own visible date rather than borrowing the snapshot's freshness.
 
 ## Phase 2.1 — Free-places live read
 
-**Plan**: _not yet created_
+**Plan**: _not created — epic deferred 2026-09-19, see above_
 
 **Linear**: YAS-9 (https://linear.app/ivo-tsonev/issue/YAS-9)
 

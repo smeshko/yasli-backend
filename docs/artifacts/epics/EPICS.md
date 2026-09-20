@@ -14,13 +14,14 @@ small-to-medium pull request and maps to exactly one plan under
 | In progress | At least one phase has been merged |
 | Done | All phases complete and validated against the acceptance criteria |
 | Blocked | Waiting on a prerequisite epic |
+| Deferred | Not being built; the epic file records why, and what would reopen it |
 
 ## Epic status
 
 | # | Epic | Phases | Dependencies | Status |
 |---|------|--------|--------------|--------|
 | 1 | [Institution data foundation](./01-institution-data-foundation.md) | 3 | — | Done |
-| 2 | [Free-places API](./02-free-places-api.md) | 1 | Epic 01 | Ready for dev |
+| 2 | [Free-places API](./02-free-places-api.md) | 1 | Epic 01 | Deferred |
 
 ## Other repos
 
