@@ -4,6 +4,11 @@ Default subcommand (no args, preserving the cron's invocation) runs the
 weekly ingest pipeline: fetch from R2, validate, upsert, and run both
 gated district-stamping passes in one transaction.
 
+``--snapshot <path>`` reads the snapshot from a local file instead —
+``data/seed/snapshot.json.gz`` is the committed one — and requires no R2
+credential. The bare invocation the weekly cron uses is unchanged: with no
+flag, R2 is still required and still validated at startup.
+
 The ``restamp-districts`` subcommand runs the non-gated stamping passes
 (addresses then institutions) inside their own transaction. No R2 fetch.
 Used after a quarterly ГРАО refresh to propagate reassignments.
@@ -14,6 +19,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from pathlib import Path
 
 from botocore.exceptions import BotoCoreError, ClientError
 from pydantic import ValidationError
@@ -77,16 +83,18 @@ def _emit_restamp_summary(
     )
 
 
-def _run_ingest_subcommand() -> int:
+def _run_ingest_subcommand(snapshot_path: Path | None = None) -> int:
     try:
-        _validate_startup_config(require_r2=True)
+        # A local snapshot needs no credential — that is the whole point of
+        # the flag — so the R2 vars are only required for an R2 fetch.
+        _validate_startup_config(require_r2=snapshot_path is None)
     except (ValueError, r2.R2ConfigError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
 
     try:
-        summary = pipeline.run()
-    except pipeline.UnsupportedSnapshotVersion as exc:
+        summary = pipeline.run(snapshot_path=snapshot_path)
+    except (pipeline.UnsupportedSnapshotVersion, pipeline.SnapshotFileError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 3
     except ValidationError as exc:
@@ -149,18 +157,37 @@ def _run_validate_match_data_subcommand() -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # `--snapshot` has to work both before the subcommand (the bare
+    # `python -m yasli.ingest --snapshot …` form) and after it. SUPPRESS keeps
+    # the subparser's copy from clobbering a value given ahead of it.
+    snapshot_flag = argparse.ArgumentParser(add_help=False)
+    snapshot_flag.add_argument(
+        "--snapshot",
+        type=Path,
+        default=argparse.SUPPRESS,
+        metavar="PATH",
+        help=(
+            "Read the snapshot from this local file (.json or .gz) instead of "
+            "R2. No R2 credential is required. The committed copy is "
+            f"{pipeline.DEFAULT_SNAPSHOT}."
+        ),
+    )
     parser = argparse.ArgumentParser(
         prog="yasli.ingest",
+        parents=[snapshot_flag],
         description=(
-            "Pull snapshots/varna/latest.json from R2 and upsert into "
-            "Postgres in one transaction (default), or run non-gated "
-            "district-stamping passes (restamp-districts subcommand), or "
-            "validate match data assumptions."
+            "Pull snapshots/varna/latest.json from R2 — or a local file with "
+            "--snapshot — and upsert into Postgres in one transaction "
+            "(default), or run non-gated district-stamping passes "
+            "(restamp-districts subcommand), or validate match data "
+            "assumptions."
         ),
     )
     subparsers = parser.add_subparsers(dest="cmd")
     subparsers.add_parser(
-        "ingest", help="Full snapshot ingest (default behaviour with no args)."
+        "ingest",
+        parents=[snapshot_flag],
+        help="Full snapshot ingest (default behaviour with no args).",
     )
     subparsers.add_parser(
         "restamp-districts",
@@ -174,9 +201,12 @@ def main(argv: list[str] | None = None) -> int:
         help="Read-only validation of match-routing data assumptions.",
     )
     args = parser.parse_args(argv)
+    snapshot_path = getattr(args, "snapshot", None)
 
     if args.cmd is None or args.cmd == "ingest":
-        return _run_ingest_subcommand()
+        return _run_ingest_subcommand(snapshot_path)
+    if snapshot_path is not None:
+        parser.error(f"--snapshot is not valid for the {args.cmd} subcommand")
     if args.cmd == "restamp-districts":
         return _run_restamp_districts_subcommand()
     if args.cmd == "validate-match-data":

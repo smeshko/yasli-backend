@@ -9,6 +9,7 @@ visible to the ingest code.
 
 from __future__ import annotations
 
+import gzip
 import io
 import json
 import os
@@ -128,3 +129,74 @@ def test_summary_line_format(
         "elapsed_ms=",
     ):
         assert field in output, f"missing {field!r} in summary line: {output!r}"
+
+
+# --- `--snapshot <path>`: ingest without R2 --------------------------------
+
+
+def test_snapshot_flag_needs_no_r2_vars(tmp_path: Path) -> None:
+    """The whole point of the flag: no R2_* variable is required.
+
+    The run still fails — there is no reachable Postgres in this sandbox —
+    but it must fail on the *database*, never on missing R2 config.
+    """
+    env = {"DATABASE_URL": "postgresql+psycopg://test:test@localhost:1/test"}
+    result = _run_cli(env, ["--snapshot", str(FIXTURE_PATH)])
+    assert "R2_" not in result.stderr
+
+
+def test_snapshot_flag_missing_file_exits_3(tmp_path: Path) -> None:
+    missing = tmp_path / "nope.json.gz"
+    env = {"DATABASE_URL": "postgresql+psycopg://test:test@localhost:5432/test"}
+    result = _run_cli(env, ["--snapshot", str(missing)])
+    assert result.returncode == 3
+    assert str(missing) in result.stderr
+
+
+def test_snapshot_flag_corrupt_gzip_exits_3(tmp_path: Path) -> None:
+    corrupt = tmp_path / "snapshot.json.gz"
+    corrupt.write_bytes(b"this is not gzip")
+    env = {"DATABASE_URL": "postgresql+psycopg://test:test@localhost:5432/test"}
+    result = _run_cli(env, ["--snapshot", str(corrupt)])
+    assert result.returncode == 3
+    assert "gzip" in result.stderr
+
+
+def test_snapshot_flag_non_v2_exits_3(tmp_path: Path) -> None:
+    v1 = tmp_path / "snapshot.json"
+    v1.write_text(
+        json.dumps({"schema_version": 1, "city": "varna", "institutions": []}),
+        encoding="utf-8",
+    )
+    env = {"DATABASE_URL": "postgresql+psycopg://test:test@localhost:5432/test"}
+    result = _run_cli(env, ["--snapshot", str(v1)])
+    assert result.returncode == 3
+    assert "schema_version" in result.stderr
+
+
+def test_without_snapshot_flag_r2_is_still_required() -> None:
+    """The cron's bare invocation must keep failing on missing R2 config."""
+    env = {"DATABASE_URL": "postgresql+psycopg://test:test@localhost:5432/test"}
+    result = _run_cli(env, [])
+    assert result.returncode == 2
+    assert "R2_ACCOUNT_ID" in result.stderr
+
+
+def test_snapshot_flag_ingests_the_committed_file(
+    engine,  # provided by tests/ingest/conftest.py
+    monkeypatch,
+) -> None:
+    """A gzipped path ingests end-to-end with R2 unconfigured."""
+    for var in ("R2_ACCOUNT_ID", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY", "R2_BUCKET"):
+        monkeypatch.delenv(var, raising=False)
+    archive = Path(tempfile.mkdtemp()) / "snapshot.json.gz"
+    archive.write_bytes(gzip.compress(FIXTURE_PATH.read_bytes(), 9))
+
+    from yasli.ingest.__main__ import main
+
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        rc = main(["--snapshot", str(archive)])
+
+    assert rc == 0
+    assert "ingest done" in buf.getvalue()
