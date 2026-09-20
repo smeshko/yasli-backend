@@ -8,8 +8,9 @@ linear_project: c980a4e3-e9b6-4dcb-af33-53cb3c2cd705
 
 Give every Varna nursery, kindergarten and preschool a complete, shareable
 profile: where it is, how to reach it, which buildings it occupies and what it
-serves — reachable from a search result or a browsable directory. Search today answers "who is responsible for my address";
-this project answers "tell me more about this institution" (PRD jobs #2 and #3).
+serves — reachable from a search result or a browsable directory. Search
+today answers "who is responsible for my address"; this project answers
+"tell me more about this institution" (PRD jobs #2 and #3).
 
 The work spans all three repos, each of which carries its own copy of this
 charter linked to the same Linear Project.
