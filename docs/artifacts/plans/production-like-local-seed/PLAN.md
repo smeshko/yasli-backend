@@ -182,5 +182,5 @@ Task state lives here. Tasks are appended by `scripts/add_task.py` and
 - [x] TASK-004: Add the yasli.seed orchestrator (depends on TASK-001,TASK-002,TASK-003)
 - [x] TASK-005: Verify the seeded database and refuse half-done (depends on TASK-004)
 - [x] TASK-006: Add the freeze maintainer command (depends on TASK-002,TASK-003,TASK-004)
-- [ ] TASK-007: Document the seed command and the local-vs-production gap (depends on TASK-004,TASK-005,TASK-006)
+- [x] TASK-007: Document the seed command and the local-vs-production gap (depends on TASK-004,TASK-005,TASK-006)
 - [ ] TASK-008: Final Validation

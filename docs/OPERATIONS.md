@@ -6,6 +6,65 @@ refreshes, post-mortem digging.
 
 ---
 
+## Local seed data
+
+A developer setting up locally does **not** do any of the refreshes below.
+`python -m yasli.seed` brings an empty Postgres to a production-like state
+from data committed to this repository, with no credential of any kind.
+See the [README quickstart](../README.md#quickstart); this section is
+about keeping that committed data current.
+
+### The three committed artifacts
+
+| Artifact | What it is | Refreshed by |
+| --- | --- | --- |
+| [`data/grao/kads-03-06.zip`](../data/grao/README.md) | the ГРАО Address Classifier for the current election cycle, 92 KB | by hand, per election cycle — see the section below |
+| [`data/seed/snapshot.json.gz`](../data/seed/README.md) | a frozen copy of `snapshots/varna/latest.json`, ~760 KB | `python -m yasli.seed freeze` |
+| [`data/seed/legacy_institutions.json`](../data/seed/README.md) | the 18 nursery rows production carries that no snapshot creates | `python -m yasli.seed freeze` |
+
+[`data/institution_locations.csv`](../data/institution_locations.csv) is
+the fourth input the seed loads; it has its own runbook under
+[Institution locations refresh](#institution-locations-refresh).
+
+### When to refresh, and what happens if you never do
+
+- **Snapshot.** `python -m yasli.seed verify` prints its `scraped_at` and
+  emits a *warning* — not a failure — once it is more than 90 days old.
+  Nothing breaks: a local database simply keeps answering with the
+  institutions, contact details and catchment of the day it was frozen,
+  drifting further from production the longer it sits. Refresh when the
+  warning appears, or when local behaviour stops matching a production bug
+  report.
+- **Legacy fixture.** It only changes when production's stale-row
+  population changes — in practice, when someone finally retires those 18.
+  `freeze` re-derives it on every full run.
+- **ГРАО archive.** Per election cycle, on the same triggers as the
+  production refresh below. If it goes stale, new construction appears in
+  snapshots with no район and `verify`'s `address-districts` check fails
+  once in-city unstamped addresses pass 2%.
+
+### Refreshing the snapshot and the fixture
+
+```bash
+railway run --service backend-ingest -- python -m yasli.seed freeze --dry-run
+railway run --service backend-ingest -- python -m yasli.seed freeze
+just db-reset && just be-seed   # confirm the row counts are unchanged
+```
+
+This is the one command in the seed path that needs credentials: R2 for
+the snapshot, and read access to production for the fixture. `railway run
+--service backend-ingest` supplies the `R2_*` variables but its
+`DATABASE_URL` points at `postgres.railway.internal`, which does not
+resolve from a laptop — pass the Postgres service's `DATABASE_PUBLIC_URL`
+instead.
+
+The two files are published as a pair, with guards against the failure
+that actually costs data (a fixture row overwriting a live one). The full
+flag list and the reasoning are in
+[`data/seed/README.md`](../data/seed/README.md).
+
+---
+
 ## ГРАО quarterly reference-data refresh
 
 The ГД ГРАО (Главна Дирекция ГРАО) Address Classifier is the ground truth
@@ -14,6 +73,11 @@ powers nursery + preschool routing in `/api/match`. The file is republished
 per Bulgarian election cycle (roughly yearly, with off-cycle by-elections
 occasionally minting a fresh release). The first iteration of the refresh
 process is manual — automating the probe is a separate change.
+
+> **Local development does not need this.** The current cycle's archive is
+> committed at `data/grao/kads-03-06.zip` and `python -m yasli.seed` loads
+> it automatically. What follows is how to obtain a *new* cycle's file and
+> load it into **production** — and how to replace the committed copy.
 
 ### When to refresh
 
@@ -34,10 +98,11 @@ The numeric id rotates each election. To find the current id:
 2. The page links to a ZIP archive named `kads-03-06.zip`. Right-click,
    copy link. The URL has the form
    `varna.bg/upload/<6-digit-id>/kads-03-06.zip`.
-3. Download the ZIP (~700 KB).
-4. Extract — the archive contains a single plaintext file (typically
-   also named `kads-03-06.txt`). The file is windows-1251 encoded with
-   CRLF line terminators.
+3. Download the ZIP (~90 KB).
+4. Keep it zipped. The loader reads the archive's single member in memory,
+   and the extracted windows-1251 plaintext is the form this runbook has
+   long warned gets mangled by Git, editors and `unzip`. Extract only if
+   you want to inspect it.
 
 If `varna.bg` is unreachable, the same file (and the cycle archive) is
 mirrored on `https://www.grao.bg/` — search the elections / addresses
@@ -45,25 +110,33 @@ section. The two sources are byte-identical per cycle.
 
 ### Loading the file into the database
 
-Once the plaintext file is on a machine that can reach the production
-Postgres (Railway's "exec into deployment" shell works; or run locally
-against a tunneled `DATABASE_URL`):
+Once the archive is on a machine that can reach the production Postgres
+(Railway's "exec into deployment" shell works; or run locally against a
+tunneled `DATABASE_URL`):
 
 ```bash
-# 1. Verify the file decodes correctly.
-file kads-03-06.txt
-iconv -f windows-1251 -t utf-8 kads-03-06.txt | head -5
-
-# 2. Load it. TRUNCATE grao_addresses + bulk INSERT inside one transaction.
-python -m yasli.ingest.grao_loader /path/to/kads-03-06.txt
+# 1. Load it. TRUNCATE grao_addresses + bulk INSERT inside one transaction.
+#    Takes the published .zip or an extracted .txt; with no argument it
+#    loads the committed data/grao/kads-03-06.zip.
+python -m yasli.ingest.grao_loader /path/to/kads-03-06.zip
 
 # Expected output:
 # grao_loader done rows=<50000-100000> streets=<3000-6000> skipped=0
 ```
 
 If the loader exits non-zero with `error: file is not valid windows-1251`,
-the file got mangled by Git, an editor, or `unzip` (rare). Re-extract from
-the ZIP. The loader does not write anything if decoding fails.
+the file got mangled by Git, an editor, or `unzip` (rare). Re-download the
+ZIP and pass that. The loader does not write anything if the input does
+not decode, and an archive holding zero or several members fails the same
+way rather than raising a `zipfile` traceback.
+
+**Also replace the committed copy**, or every local database keeps the old
+cycle: drop the new archive over `data/grao/kads-03-06.zip`, update the
+SHA-256 and the row counts in [`data/grao/README.md`](../data/grao/README.md),
+and run `uv run pytest tests/test_grao_loader.py` — its committed-data
+tests pin the row and street counts and the ВАПЦАРОВ №7 → район `02` case,
+so a truncated or wrong-cycle download fails there rather than seeding
+quietly.
 
 ### Propagating district reassignments
 
