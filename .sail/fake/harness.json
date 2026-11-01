@@ -1,0 +1,690 @@
+{
+  "plan": [
+    {
+      "outcome": "done",
+      "output": {
+        "slug": "show-total-cost",
+        "scope": "cli",
+        "risk": "large",
+        "tasks": [
+          {
+            "id": "TASK-001",
+            "title": "Print the total cost in the footer",
+            "type": "impl",
+            "commit": "feat(cli): print the run's total cost in sail show's footer"
+          }
+        ]
+      },
+      "files": {
+        "plan.md": "# Plan: Total cost in sail show's footer\n\nRisk: large\n\n## Goal\n\n`sail show <run>` ends with the run's total cost, so a reader sees what a run spent without adding the calls up.\n\n## Scope\n\n- A footer line in `src/cli/commands/show.ts`, summed from each call's `costUsd`\n\n## Out of Scope\n\n- The dashboard's run view, which already shows a total\n\n## Research Summary\n\n`src/cli/commands/show.ts` renders one row per call from `summary.json`; each call carries `usage.costUsd`.\n\n## Decisions\n\n- Sum the calls' costs rather than read a run-level field: `summary.json` has none.\n\n## Risks\n\n- Floating-point sums print long decimals: round to two places when printing.\n\n## Acceptance Criteria\n\n- [ ] `sail show <run>` ends with `total $<cost>`\n- [ ] A run with no agent calls prints `total $0.00`\n\n## Demonstration\n\nSurface: cli. In a demo repository, a fake run of `FAKE-1`, then `sail show` on it.\n\n- `sail show <run>` ends with `total $<cost>`: after the fake run, `sail show <run>`'s last line is `total $` and the sum of the calls' costs in `summary.json`, to two decimals\n- A run with no agent calls prints `total $0.00`: a seeded workflow of one script stage, run, then `sail show <run>` ends with `total $0.00`\n\n## Tasks\n\n- [ ] TASK-001: Print the total cost in the footer\n\n## Task details\n\n### TASK-001: Print the total cost in the footer\n\nType: impl\nDepends on: none\nSuggested commit: feat(cli): print the run's total cost in sail show's footer\n\nGoal: the footer line.\n\nFiles: `src/cli/commands/show.ts`, the footer.\n\nAcceptance:\n\n- [ ] `sail show` ends with `total $<cost>`\n\nEvidence: `test/cli/show.test.ts` passing.\n"
+      },
+      "messages": ["Plan written: one task, risk large."],
+      "turns": 12,
+      "usage": {
+        "inputTokens": 4000,
+        "cacheReadTokens": 20000,
+        "cacheWriteTokens": 2000,
+        "outputTokens": 1500,
+        "costUsd": 0.9
+      }
+    }
+  ],
+  "implement": [
+    {
+      "outcome": "done",
+      "output": {
+        "tasks": [
+          {
+            "id": "TASK-001",
+            "commit": "89541459e5b0696a12a6adb712334ea24cff1a31",
+            "evidence": "bun run test test/cli/show.test.ts: 2 pass"
+          }
+        ],
+        "notes": "As planned."
+      },
+      "messages": ["TASK-001 committed."],
+      "turns": 30,
+      "usage": {
+        "inputTokens": 4000,
+        "cacheReadTokens": 20000,
+        "cacheWriteTokens": 2000,
+        "outputTokens": 1500,
+        "costUsd": 2.1
+      }
+    }
+  ],
+  "describe": [
+    {
+      "outcome": "done",
+      "output": {
+        "title": "feat(cli): print the run's total cost in sail show's footer (FAKE-1)",
+        "bodyFile": "pr-body.md",
+        "followUps": [
+          {
+            "title": "sail show's footer ignores calls replayed from a seeded run",
+            "description": "`src/cli/commands/show.ts` sums `costUsd` over the calls this run made, so a run seeded with `--from-run` prints a total without the replayed calls' cost. Left out: the plan scoped the footer to this run's own calls.",
+            "type": "bug",
+            "trigger": "`sail show <run>` on a run started with `--from-run`"
+          }
+        ]
+      },
+      "files": {
+        "pr-body.md": "## Summary\n\n`sail show` ends with the run's total cost.\n\n## Changes\n\n- The footer line.\n\n## Testing\n\nTwo tests; `bun run verify` passes.\n\nCloses FAKE-1\n"
+      },
+      "messages": ["PR described."],
+      "turns": 4,
+      "usage": {
+        "inputTokens": 4000,
+        "cacheReadTokens": 20000,
+        "cacheWriteTokens": 2000,
+        "outputTokens": 1500,
+        "costUsd": 0.1
+      }
+    }
+  ],
+  "check-tasks#1": [
+    {
+      "outcome": "done",
+      "output": {
+        "tasks": [
+          {
+            "id": "TASK-001",
+            "implemented": false,
+            "evidence": "No commit touches show.ts's footer: the branch's one commit only adds the test."
+          }
+        ]
+      },
+      "turns": 6,
+      "usage": {
+        "inputTokens": 0,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0,
+        "outputTokens": 0,
+        "costUsd": 0.1
+      }
+    }
+  ],
+  "check-tasks": [
+    {
+      "outcome": "done",
+      "output": {
+        "tasks": [
+          {
+            "id": "TASK-001",
+            "implemented": true,
+            "evidence": "89541459: src/cli/commands/show.ts prints the footer, test/cli/show.test.ts covers it."
+          }
+        ]
+      },
+      "turns": 5,
+      "usage": {
+        "inputTokens": 0,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0,
+        "outputTokens": 0,
+        "costUsd": 0.1
+      }
+    }
+  ],
+  "demonstrate": [
+    {
+      "outcome": "done",
+      "output": {
+        "criteria": [
+          {
+            "criterion": "`sail show <run>` ends with `total $<cost>`",
+            "shown": true,
+            "evidence": "`sail show FAKE-1-01M5…` ended with `total $1.35`"
+          },
+          {
+            "criterion": "A run with no agent calls prints `total $0.00`",
+            "shown": false,
+            "evidence": "a run of a one-script workflow ended with `total $` and nothing after it"
+          }
+        ],
+        "skipped": null,
+        "transcript": "$ sail show FAKE-1-01M5\n…\ntotal $1.35\nexit 0"
+      },
+      "turns": 14,
+      "usage": {
+        "inputTokens": 0,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0,
+        "outputTokens": 0,
+        "costUsd": 0.6
+      }
+    }
+  ],
+  "judge": [
+    {
+      "outcome": "done",
+      "output": {
+        "summary": "The footer works for runs with agent calls; an empty run and a rounding edge are broken, and validation fails on the empty run's test.",
+        "decisions": [
+          {
+            "finding": "V1",
+            "verdict": "fix",
+            "rationale": "The failing test is the empty-run criterion.",
+            "ticket": null
+          },
+          {
+            "finding": "D1",
+            "verdict": "fix",
+            "rationale": "An acceptance criterion this change must meet.",
+            "ticket": null
+          },
+          {
+            "finding": "R1",
+            "verdict": "drop",
+            "rationale": "Duplicates D1.",
+            "ticket": null
+          },
+          {
+            "finding": "R2",
+            "verdict": "fix",
+            "rationale": "A real bug in the line this change adds.",
+            "ticket": null
+          },
+          {
+            "finding": "R3",
+            "verdict": "ticket",
+            "rationale": "Real, but in runs.ts, outside this change.",
+            "ticket": {
+              "title": "sail runs sums call costs without rounding",
+              "description": "`src/cli/commands/runs.ts` sums `costUsd` as floats and prints them unrounded, as show.ts did before its review.",
+              "type": "bug",
+              "trigger": "`sail runs` in a repository whose runs cost fractions of a cent"
+            }
+          },
+          {
+            "finding": "R4",
+            "verdict": "drop",
+            "rationale": "Taste: the name is local to one function.",
+            "ticket": null
+          }
+        ],
+        "thin": []
+      },
+      "turns": 18,
+      "usage": {
+        "inputTokens": 0,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0,
+        "outputTokens": 0,
+        "costUsd": 0.9
+      }
+    }
+  ],
+  "fix": [
+    {
+      "outcome": "done",
+      "output": {
+        "fixes": [
+          {
+            "finding": "V1",
+            "commit": "1111111111111111111111111111111111111111",
+            "note": "Sums from 0."
+          },
+          {
+            "finding": "D1",
+            "commit": "1111111111111111111111111111111111111111",
+            "note": "Same fix as V1."
+          },
+          {
+            "finding": "R2",
+            "commit": "2222222222222222222222222222222222222222",
+            "note": "Rounds in cents."
+          }
+        ]
+      },
+      "turns": 40,
+      "usage": {
+        "inputTokens": 0,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0,
+        "outputTokens": 0,
+        "costUsd": 2.1
+      }
+    }
+  ],
+  "check-fix#1": [
+    {
+      "outcome": "done",
+      "output": {
+        "items": [
+          {
+            "finding": "V1",
+            "resolved": true,
+            "detail": "The sum starts at 0."
+          },
+          {
+            "finding": "D1",
+            "resolved": true,
+            "detail": "An empty run prints `total $0.00`."
+          },
+          {
+            "finding": "R2",
+            "resolved": false,
+            "detail": "Rounds 0.005 correctly, but 1.005 still prints 1.00: the cents are taken before the multiply."
+          }
+        ],
+        "findings": []
+      },
+      "turns": 15,
+      "usage": {
+        "inputTokens": 0,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0,
+        "outputTokens": 0,
+        "costUsd": 0.7
+      }
+    }
+  ],
+  "check-fix": [
+    {
+      "outcome": "done",
+      "output": {
+        "items": [
+          {
+            "finding": "V1",
+            "resolved": true,
+            "detail": "Holds."
+          },
+          {
+            "finding": "D1",
+            "resolved": true,
+            "detail": "Holds."
+          },
+          {
+            "finding": "R2",
+            "resolved": true,
+            "detail": "1.005 prints 1.01; the test covers both edges."
+          }
+        ],
+        "findings": []
+      },
+      "turns": 12,
+      "usage": {
+        "inputTokens": 0,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0,
+        "outputTokens": 0,
+        "costUsd": 0.6
+      }
+    }
+  ],
+  "review-requirements": [
+    {
+      "outcome": "done",
+      "output": {
+        "summary": "The footer meets the first criterion; the empty run is the open one.",
+        "coverage": [
+          {
+            "what": "`sail show <run>` ends with `total $<cost>`",
+            "how": "show.ts footer, and test/cli/show.test.ts 'prints the total'",
+            "status": "holds"
+          },
+          {
+            "what": "A run with no agent calls prints `total $0.00`",
+            "how": "show.ts sums with reduce and no initial value; no test covers an empty run",
+            "status": "finding"
+          },
+          {
+            "what": "Nothing beyond the requirements",
+            "how": "git diff --stat: show.ts and its test only",
+            "status": "holds"
+          }
+        ],
+        "findings": [
+          {
+            "severity": "medium",
+            "file": "src/cli/commands/show.ts",
+            "title": "An empty run prints no amount",
+            "detail": "With no agent calls the sum is undefined, so the footer prints `total $`."
+          }
+        ]
+      },
+      "turns": 20,
+      "usage": {
+        "inputTokens": 0,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0,
+        "outputTokens": 0,
+        "costUsd": 0.8
+      }
+    }
+  ],
+  "review-architecture": [
+    {
+      "outcome": "done",
+      "output": {
+        "summary": "The footer fits show.ts's renderer.",
+        "coverage": [
+          {
+            "what": "src/cli/commands/show.ts",
+            "how": "the footer stays in the CLI renderer; summary.json is read as before",
+            "status": "holds"
+          },
+          {
+            "what": "Contracts changed",
+            "how": "none: no event, schema or flag changes",
+            "status": "holds"
+          }
+        ],
+        "findings": []
+      },
+      "turns": 20,
+      "usage": {
+        "inputTokens": 0,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0,
+        "outputTokens": 0,
+        "costUsd": 0.8
+      }
+    }
+  ],
+  "review-bugs": [
+    {
+      "outcome": "done",
+      "output": {
+        "summary": "One rounding bug, and the same sum elsewhere.",
+        "coverage": [
+          {
+            "what": "footer(calls)",
+            "how": "traced 0 calls, 1 call, costs of 0.005 and 1.005",
+            "status": "finding"
+          }
+        ],
+        "findings": [
+          {
+            "severity": "high",
+            "file": "src/cli/commands/show.ts",
+            "title": "A cost of 0.005 prints as $0.00",
+            "detail": "toFixed rounds binary floats down here, so 0.005 shows as 0.00."
+          },
+          {
+            "severity": "medium",
+            "file": "src/cli/commands/runs.ts",
+            "title": "sail runs sums costs the same unrounded way",
+            "detail": "runs.ts has the same float sum, outside this change."
+          }
+        ]
+      },
+      "turns": 20,
+      "usage": {
+        "inputTokens": 0,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0,
+        "outputTokens": 0,
+        "costUsd": 0.8
+      }
+    }
+  ],
+  "review-tests": [
+    {
+      "outcome": "done",
+      "output": {
+        "summary": "The new test proves the footer for a run with calls.",
+        "coverage": [
+          {
+            "what": "The footer line",
+            "how": "test/cli/show.test.ts asserts the exact line; reverting show.ts turns it red",
+            "status": "holds"
+          }
+        ],
+        "findings": []
+      },
+      "turns": 20,
+      "usage": {
+        "inputTokens": 0,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0,
+        "outputTokens": 0,
+        "costUsd": 0.8
+      }
+    }
+  ],
+  "review-security": [
+    {
+      "outcome": "done",
+      "output": {
+        "summary": "Nothing reaches a command, path or prompt.",
+        "coverage": [
+          {
+            "what": "Untrusted input",
+            "how": "the footer prints numbers from summary.json only",
+            "status": "holds"
+          },
+          {
+            "what": "Permissions and secrets",
+            "how": "no stage, permission or credential changes",
+            "status": "holds"
+          }
+        ],
+        "findings": []
+      },
+      "turns": 20,
+      "usage": {
+        "inputTokens": 0,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0,
+        "outputTokens": 0,
+        "costUsd": 0.8
+      }
+    }
+  ],
+  "review-conventions": [
+    {
+      "outcome": "done",
+      "output": {
+        "summary": "Readable; one naming nit.",
+        "coverage": [
+          {
+            "what": "Commit subjects",
+            "how": "git log: feat(cli): ... (FAKE-1)",
+            "status": "holds"
+          },
+          {
+            "what": "Names",
+            "how": "`tot` in show.ts",
+            "status": "finding"
+          }
+        ],
+        "findings": [
+          {
+            "severity": "low",
+            "file": "src/cli/commands/show.ts",
+            "title": "`tot` is a terse name",
+            "detail": "`tot` reads as a typo; `total` matches the rest of the file."
+          }
+        ]
+      },
+      "turns": 20,
+      "usage": {
+        "inputTokens": 0,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0,
+        "outputTokens": 0,
+        "costUsd": 0.8
+      }
+    }
+  ],
+  "duplicates": [
+    {
+      "outcome": "done",
+      "output": {
+        "candidates": [
+          {
+            "ticketKey": "FAKE-1",
+            "confidence": 0.6,
+            "why": "FAKE-1 asks for the same total in sail show's footer."
+          }
+        ]
+      },
+      "turns": 4,
+      "usage": {
+        "inputTokens": 0,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0,
+        "outputTokens": 0,
+        "costUsd": 0.1
+      }
+    }
+  ],
+  "worth": [
+    {
+      "outcome": "done",
+      "output": {
+        "verdict": "keep",
+        "confidence": 0.7,
+        "why": "A run's total cost is something a person reading sail show asks for; nothing prints it today.",
+        "merges": [
+          {
+            "ticketKey": "FAKE-1",
+            "confidence": 0.6,
+            "why": "FAKE-1 asks for the same footer line, with acceptance criteria."
+          }
+        ]
+      },
+      "turns": 5,
+      "usage": {
+        "inputTokens": 0,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0,
+        "outputTokens": 0,
+        "costUsd": 0.1
+      }
+    }
+  ],
+  "staleness": [
+    {
+      "outcome": "done",
+      "output": {
+        "stale": false,
+        "evidence": "git grep 'total' src/cli/commands/show.ts finds no total: show.ts lists each call's cost and stops."
+      },
+      "turns": 5,
+      "usage": {
+        "inputTokens": 0,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0,
+        "outputTokens": 0,
+        "costUsd": 0.1
+      }
+    }
+  ],
+  "questions": [
+    {
+      "outcome": "done",
+      "output": {
+        "questions": [
+          {
+            "ask": "Should the total include the calls a seeded run reused from the run it came from?",
+            "options": [
+              {
+                "option": "include reused",
+                "means": "the total is the whole run's cost, as if every call had run here"
+              },
+              {
+                "option": "exclude reused",
+                "means": "the total is what this run spent, and a seeded run's total is smaller"
+              }
+            ],
+            "recommend": "exclude reused",
+            "why": "reused calls cost the seeded run nothing, so the total should say what it spent",
+            "cites": ["src/cli/commands/show.ts:40"]
+          }
+        ]
+      },
+      "turns": 4,
+      "usage": {
+        "inputTokens": 0,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0,
+        "outputTokens": 0,
+        "costUsd": 0.1
+      }
+    }
+  ],
+  "decide": [
+    {
+      "outcome": "done",
+      "output": {
+        "summary": "FAKE-2 asks for the footer FAKE-1 asks for, less precisely; it is probably a duplicate, but the check is not sure enough to cancel it.",
+        "actions": [
+          {
+            "kind": "duplicate",
+            "of": "FAKE-1"
+          },
+          {
+            "kind": "edit",
+            "title": "Show the run's total cost in sail show's footer"
+          }
+        ],
+        "questions": [
+          {
+            "ask": "Should the total include the calls a seeded run reused from the run it came from?",
+            "options": [
+              {
+                "option": "include reused",
+                "means": "the total is the whole run's cost, as if every call had run here"
+              },
+              {
+                "option": "exclude reused",
+                "means": "the total is what this run spent, and a seeded run's total is smaller"
+              }
+            ],
+            "recommend": "exclude reused",
+            "why": "reused calls cost the seeded run nothing, so the total should say what it spent",
+            "cites": ["src/cli/commands/show.ts:40"]
+          },
+          {
+            "ask": "Should a run that made no agent calls print a total line at all?",
+            "options": [
+              {
+                "option": "print $0.00",
+                "means": "every run ends the same way, so a reader never wonders whether the line is missing"
+              },
+              {
+                "option": "print nothing",
+                "means": "a run with no cost shows no footer, and a script-only run looks as it does today"
+              }
+            ],
+            "recommend": "print $0.00",
+            "why": "a footer that sometimes appears is harder to scan than one that always does",
+            "cites": ["src/cli/commands/show.ts:52-58"]
+          }
+        ]
+      },
+      "files": {
+        "report.md": "## Grooming report\n\nFAKE-2 reads as a vaguer FAKE-1: both want a total cost line in `sail show`.\n\n## Worth\n\nKept at 0.70: nothing prints a run's total today, and a reader of `sail show` asks for it.\n\n## Merges\n\n- FAKE-1 at confidence 0.60: the same footer line; likely one ticket, but the check is not sure enough to merge.\n\n## Duplicates\n\n- FAKE-1 at confidence 0.60: the same footer line, but FAKE-2 does not say where the total goes.\n\n## Staleness\n\nNot stale: `show.ts` lists each call's cost and prints no total.\n\n## Labels\n\nFAKE-2 carries no type or platform: it is a `feature` of the `cli`.\n\n## Assumptions\n\n- Rounded the total to two decimals: the footer prints dollars, and sub-cent precision adds nothing.\n"
+      },
+      "messages": ["Report written: FAKE-2 is probably a duplicate of FAKE-1."],
+      "turns": 10,
+      "usage": {
+        "inputTokens": 0,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0,
+        "outputTokens": 0,
+        "costUsd": 0.4
+      }
+    }
+  ],
+  "resolve-conflicts": [
+    {
+      "outcome": "done",
+      "output": {
+        "commit": "3333333333333333333333333333333333333333",
+        "note": "Kept the cost footer and the base's new column."
+      },
+      "turns": 20,
+      "usage": {
+        "inputTokens": 0,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0,
+        "outputTokens": 0,
+        "costUsd": 0.8
+      }
+    }
+  ]
+}
