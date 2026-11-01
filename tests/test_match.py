@@ -513,6 +513,18 @@ def test_non_integer_address_id_returns_422(client: TestClient) -> None:
     assert resp.status_code == 422
 
 
+def test_address_id_above_bigint_returns_422(client: TestClient) -> None:
+    resp = client.get("/api/match?address_id=99999999999999999999")
+    assert resp.status_code == 422
+
+
+def test_address_id_at_bigint_max_returns_404(client: TestClient) -> None:
+    _seed_fixture(client)
+    resp = client.get("/api/match?address_id=9223372036854775807")
+    assert resp.status_code == 404
+    assert resp.json() == {"error": "address_not_found"}
+
+
 def test_invalid_kind_returns_422(client: TestClient) -> None:
     _seed_fixture(client)
     resp = client.get("/api/match?address_id=1&kind=infant")

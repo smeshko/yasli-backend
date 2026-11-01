@@ -113,6 +113,7 @@ def test_institutions_detail_declares_institution_id_path_param(
     assert institution_id["required"] is True
     assert institution_id["schema"]["type"] == "integer"
     assert institution_id["schema"]["minimum"] == 1
+    assert institution_id["schema"]["maximum"] == 2**63 - 1
 
 
 def test_institutions_detail_schema_has_expected_top_level_fields(

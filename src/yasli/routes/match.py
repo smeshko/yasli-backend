@@ -18,7 +18,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from yasli.db import get_db
-from yasli.models.types import DistrictCode, Kind, LocalityType
+from yasli.models.types import BIGINT_MAX, DistrictCode, Kind, LocalityType
 from yasli.services.matching import (
     AddressContext,
     build_offerings,
@@ -78,7 +78,7 @@ def _address_response(address: AddressContext) -> MatchAddressContext:
 
 @router.get("/match", response_model=StructuredMatchResponse)
 def match(
-    address_id: int = Query(..., ge=1, description="addresses.id"),
+    address_id: int = Query(..., ge=1, le=BIGINT_MAX, description="addresses.id"),
     kind: Kind | None = Query(None, description="Filter by institution kind"),
     session: Session = Depends(get_db),
 ) -> StructuredMatchResponse | JSONResponse:

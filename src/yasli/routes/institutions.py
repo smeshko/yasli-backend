@@ -33,7 +33,7 @@ from yasli.models.address import Address, address_institutions
 from yasli.models.institution import Institution
 from yasli.models.institution_location import InstitutionLocation
 from yasli.models.street import Street
-from yasli.models.types import DistrictCode, Kind, LocationPrecision
+from yasli.models.types import BIGINT_MAX, DistrictCode, Kind, LocationPrecision
 
 router = APIRouter()
 
@@ -395,7 +395,7 @@ def _not_found() -> JSONResponse:
 
 @router.get("/institutions/{institution_id}", response_model=InstitutionDetail)
 def get_institution(
-    institution_id: int = Path(..., ge=1, description="institutions.id"),
+    institution_id: int = Path(..., ge=1, le=BIGINT_MAX, description="institutions.id"),
     session: Session = Depends(get_db),
     if_none_match: str | None = Header(default=None, alias="If-None-Match"),
 ) -> Response | JSONResponse:

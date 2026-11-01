@@ -48,6 +48,7 @@ def _assert_match_parameters(openapi: dict[str, Any], path: str) -> None:
     assert address_id["required"] is True
     assert address_id["schema"]["type"] == "integer"
     assert address_id["schema"]["minimum"] == 1
+    assert address_id["schema"]["maximum"] == 2**63 - 1
 
     kind = params["kind"]
     assert kind["required"] is False

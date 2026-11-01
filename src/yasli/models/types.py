@@ -49,7 +49,11 @@ LocationVerification = Literal["auto", "human"]
 
 VERIFICATION_VALUES: tuple[str, ...] = ("auto", "human")
 
+# Postgres BIGINT maximum, for *.id columns.
+BIGINT_MAX = 2**63 - 1
+
 __all__ = [
+    "BIGINT_MAX",
     "Kind",
     "KIND_VALUES",
     "DistrictCode",
