@@ -1,0 +1,38 @@
+[
+  {
+    "exit": 1,
+    "output": {
+      "ok": false,
+      "uncommitted": [],
+      "verify": {
+        "ok": false,
+        "exitCode": 1,
+        "tail": "1 failing test:\n\n(fail) sail show prints a zero total for a run with no agent calls\n\n 1989 pass\n 1 fail"
+      }
+    }
+  },
+  {
+    "exit": 0,
+    "output": {
+      "ok": true,
+      "uncommitted": [],
+      "verify": {
+        "ok": true,
+        "exitCode": 0,
+        "tail": " 1990 pass\n 0 fail"
+      }
+    }
+  },
+  {
+    "exit": 0,
+    "output": {
+      "ok": true,
+      "uncommitted": [],
+      "verify": {
+        "ok": true,
+        "exitCode": 0,
+        "tail": " 1990 pass\n 0 fail"
+      }
+    }
+  }
+]

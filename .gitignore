@@ -35,3 +35,6 @@ Thumbs.db
 # scripts/seed_institution_locations.py; the committed CSV + provenance are
 # the record.
 data/institution_locations.candidates.json
+.sail-runs/
+.sail/sail.d.ts
+.sail/sail-intakes.d.ts

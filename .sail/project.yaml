@@ -1,0 +1,32 @@
+# sail's config for yasli-backend: its factory, groom and review workflows, on tickets of Linear team YAS. The two sibling
+# repositories run their own copies. What differs between the three is this file, lib/repo.ts, lib/gate.sh, lib/setup.sh,
+# lib/demo.sh and REPO.md: `just sail-drift` in the parent folder diffs the rest. Set every port to `fake`, the workspace with
+# `defaultBranch: staging`, to run on the seeds under .sail/fake/ at no cost; review also needs fake/prs.json's shas to be
+# commits in this clone.
+
+# The repository's name, unique among this machine's watchers.
+name: yasli-backend
+# The sail versions this .sail/ runs on.
+sail: ">=0.0.0 <1"
+# The label that designates a ticket or pull request for this repository. All three repositories share one Linear team,
+# so it is what routes a ticket here; the `backend` platform label alone would queue the whole backlog.
+label: sail-backend
+# The workflow `sail <ticket>` runs when --workflow is left out.
+defaultWorkflow: factory
+
+adapters:
+  # Open moves the ticket to In Review once its pull request is up.
+  ticketSource: { use: linear, team: YAS, inReview: In Review }
+  codeHost: { use: github }
+  harness: { use: claude-code }
+  workspace: { use: git-worktree, setup: 'bash .sail/lib/setup.sh' }
+  # Jev answers check-tasks and check-fix before their agents run, and groom's duplicates stage asks it.
+  jev: { use: typesafe }
+
+models:
+  default: claude-sonnet-5-5
+  deep: claude-opus-5-5
+  fast: claude-haiku-5-5
+# Each agent stage carries its own dollar cap, with its turns. Minutes only stop a session that hung.
+budgets: { run: { maxMinutes: 360 } }
+conventions: [CLAUDE.md, .sail/REPO.md]
