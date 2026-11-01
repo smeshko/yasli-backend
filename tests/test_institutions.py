@@ -824,6 +824,19 @@ def test_invalid_institution_id_returns_422(client: TestClient) -> None:
     assert client.get("/api/institutions/0").status_code == 422
 
 
+def test_institution_id_above_bigint_returns_422(client: TestClient) -> None:
+    resp = client.get("/api/institutions/99999999999999999999")
+
+    assert resp.status_code == 422
+
+
+def test_institution_id_at_bigint_max_returns_404(client: TestClient) -> None:
+    resp = client.get("/api/institutions/9223372036854775807")
+
+    assert resp.status_code == 404
+    assert resp.json() == {"error": "institution_not_found"}
+
+
 def test_detail_method_not_allowed(client: TestClient) -> None:
     resp = client.post("/api/institutions/1")
 
