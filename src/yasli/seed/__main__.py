@@ -52,36 +52,24 @@ def _run_verify_subcommand() -> int:
 
 
 def _run_freeze_subcommand(args: argparse.Namespace) -> int:
-    """Regenerate the committed artifacts. Needs credentials; see freeze.py."""
+    """Regenerate the committed snapshot. Needs R2 credentials; see freeze.py."""
     try:
         Settings()
-        if not args.legacy_only:
-            # Same message `python -m yasli.ingest` already produces.
-            r2.validate_env()
+        # Same message `python -m yasli.ingest` already produces.
+        r2.validate_env()
     except (ValueError, r2.R2ConfigError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return runner.EXIT_CONFIG
 
-    print("freezing the committed seed artifacts", flush=True)
+    print("freezing the committed snapshot", flush=True)
     try:
-        report = freeze.run_freeze(
-            snapshot_only=args.snapshot_only,
-            legacy_only=args.legacy_only,
-            dry_run=args.dry_run,
-            allow_shrink=args.allow_shrink,
-        )
-    except freeze.FreezePublishError as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        return runner.EXIT_DATABASE
+        report = freeze.run_freeze(dry_run=args.dry_run)
     except freeze.FreezeError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return runner.EXIT_DATA
     except (BotoCoreError, ClientError) as exc:
         print(f"error: R2 fetch failed: {exc}", file=sys.stderr)
         return runner.EXIT_PRECONDITION
-    except SQLAlchemyError as exc:
-        print(f"error: database error: {exc}", file=sys.stderr)
-        return runner.EXIT_DATABASE
 
     print(report.format(), flush=True)
     return 0
@@ -137,24 +125,9 @@ def main(argv: list[str] | None = None) -> int:
     freeze_parser = subparsers.add_parser(
         "freeze",
         help=(
-            "Maintainer-only: regenerate data/seed/ from R2 and the configured "
-            "database. Needs the R2_* variables and read access to production."
+            "Maintainer-only: regenerate data/seed/snapshot.json.gz from R2. "
+            "Needs the R2_* variables."
         ),
-    )
-    freeze_parser.add_argument(
-        "--snapshot-only",
-        action="store_true",
-        help="Refresh the snapshot; keep and re-check the committed fixture.",
-    )
-    freeze_parser.add_argument(
-        "--legacy-only",
-        action="store_true",
-        help="Re-derive the fixture against the committed snapshot; no R2.",
-    )
-    freeze_parser.add_argument(
-        "--allow-shrink",
-        action="store_true",
-        help="Permit a derived fixture with fewer rows than the committed one.",
     )
     freeze_parser.add_argument(
         "--dry-run",
@@ -176,8 +149,6 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "verify":
         return _run_verify_subcommand()
     if args.cmd == "freeze":
-        if args.snapshot_only and args.legacy_only:
-            parser.error("--snapshot-only and --legacy-only are mutually exclusive")
         return _run_freeze_subcommand(args)
     parser.error(f"unknown subcommand: {args.cmd}")
     return runner.EXIT_CONFIG  # pragma: no cover - parser.error exits
