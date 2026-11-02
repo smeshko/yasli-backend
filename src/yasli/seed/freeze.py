@@ -62,8 +62,24 @@ def compress(payload: bytes) -> bytes:
     return gzip.compress(payload, compresslevel=GZIP_LEVEL, mtime=GZIP_MTIME)
 
 
-def _scraped_at(payload: bytes) -> datetime | None:
-    raw = json.loads(payload).get("scraped_at")
+def _parse_snapshot(payload: bytes) -> dict[str, Any]:
+    """The decoded snapshot, or FreezeError if it has no `institutions` list."""
+    try:
+        doc = json.loads(payload)
+    except ValueError as exc:
+        raise FreezeError(
+            f"R2 snapshot is not JSON ({exc}); expected an institutions list. "
+            "Nothing was written."
+        ) from exc
+    if not isinstance(doc, dict) or not isinstance(doc.get("institutions"), list):
+        raise FreezeError(
+            "R2 snapshot has no institutions list. Nothing was written."
+        )
+    return doc
+
+
+def _scraped_at(doc: dict[str, Any]) -> datetime | None:
+    raw = doc.get("scraped_at")
     if not raw:
         return None
     return datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
@@ -89,9 +105,10 @@ def run_freeze(
 
     committed = snapshot_path.read_bytes() if snapshot_path.exists() else b""
     raw_snapshot = fetch_snapshot(r2_client)
+    doc = _parse_snapshot(raw_snapshot)
     candidate = compress(raw_snapshot)
 
-    report.scraped_at = _scraped_at(raw_snapshot)
+    report.scraped_at = _scraped_at(doc)
     report.snapshot_bytes = len(candidate)
     report.snapshot_written = candidate != committed
     if not report.snapshot_written:

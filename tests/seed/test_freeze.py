@@ -166,3 +166,19 @@ def test_freeze_runs_without_a_database_url(
     )
 
     assert main(["freeze", "--dry-run"]) == 0
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [b"{}", b'{"institutions": {}}', b"[]", b"not json", b'{"institutions": [{'],
+)
+def test_a_snapshot_without_an_institutions_list_is_rejected(
+    payload: bytes, snapshot: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    before = snapshot.read_bytes()
+    monkeypatch.setattr(freeze, "fetch_snapshot", lambda client=None: payload)
+
+    with pytest.raises(freeze.FreezeError, match="institutions"):
+        freeze.run_freeze(snapshot_path=snapshot)
+
+    assert snapshot.read_bytes() == before
