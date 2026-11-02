@@ -33,12 +33,11 @@ seeding a production-like local database
   migrate                head (252 ms)
   grao                   rows=47579 streets=2071 (1152 ms)
   ingest                 institutions=77 streets=2289 addresses=49800 address_institutions=205674 ...
-  legacy-institutions    inserted=18 updated=0 unchanged=0 (26 ms)
-  institution-locations  rows=94 missing_main=18 address_drift=0 (21 ms)
+  institution-locations  rows=94 missing_main=0 address_drift=0 (21 ms)
   restamp-districts      addresses_stamped=43459 institutions_district_unstamped=4 (2373 ms)
-seed done steps=6 snapshot=2026-09-19T07:01:51+00:00 elapsed_ms=23569
+seed done steps=5 snapshot=2026-09-19T07:01:51+00:00 elapsed_ms=23569
 verifying the local database against the committed artifacts
-  [ok  ] institution-set        95 institutions = snapshot 77 + fixture 18
+  [ok  ] institution-set        77 institutions = the snapshot's 77
   ...
 verify passed checks=10 failures=0 warnings=0
 ```
@@ -56,13 +55,12 @@ but one:
 
 | | local, after the seed | production | why |
 | --- | --- | --- | --- |
-| `institutions` | 95 | 95 | 77 from the frozen snapshot, plus 18 committed separately |
-| — of which stale | 18 | 18 | `ДГ№X … / с яслена група/` rows that stopped appearing in snapshots after 2026-05-10 and were never retired. They carry no район in production either, so they route nowhere on both sides. Retiring them is a separate ticket |
+| `institutions` | 77 | 77 | the frozen snapshot's institutions |
 | `streets` | 2,289 | 2,289 | |
 | `addresses` | 49,800 | 49,800 | |
 | in-city addresses without a район | 685 / 46,149 | 685 / 46,149 | ГРАО's classifier does not cover every building; >2% is the staleness signal |
 | `grao_addresses` | 47,579 | 47,579 | the committed 2026-02 ГРАО cycle |
-| `address_institutions` | 205,674 | 241,723 | production additionally carries ~36k catchment edges on the 18 stale rows; nursery routing ignores them, so `/api/match` answers identically |
+| `address_institutions` | 205,674 | 205,674 | |
 | `institution_locations` | 94 | — | the table is newer than the current production deploy |
 
 Two things a local database does **not** have:

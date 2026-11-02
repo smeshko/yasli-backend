@@ -14,13 +14,12 @@ from data committed to this repository, with no credential of any kind.
 See the [README quickstart](../README.md#quickstart); this section is
 about keeping that committed data current.
 
-### The three committed artifacts
+### The committed artifacts
 
 | Artifact | What it is | Refreshed by |
 | --- | --- | --- |
 | [`data/grao/kads-03-06.zip`](../data/grao/README.md) | the ГРАО Address Classifier for the current election cycle, 92 KB | by hand, per election cycle — see the section below |
 | [`data/seed/snapshot.json.gz`](../data/seed/README.md) | a frozen copy of `snapshots/varna/latest.json`, ~760 KB | `python -m yasli.seed freeze` |
-| [`data/seed/legacy_institutions.json`](../data/seed/README.md) | the 18 nursery rows production carries that no snapshot creates | `python -m yasli.seed freeze` |
 
 [`data/institution_locations.csv`](../data/institution_locations.csv) is
 the fourth input the seed loads; it has its own runbook under
@@ -35,15 +34,12 @@ the fourth input the seed loads; it has its own runbook under
   drifting further from production the longer it sits. Refresh when the
   warning appears, or when local behaviour stops matching a production bug
   report.
-- **Legacy fixture.** It only changes when production's stale-row
-  population changes — in practice, when someone finally retires those 18.
-  `freeze` re-derives it on every full run.
 - **ГРАО archive.** Per election cycle, on the same triggers as the
   production refresh below. If it goes stale, new construction appears in
   snapshots with no район and `verify`'s `address-districts` check fails
   once in-city unstamped addresses pass 2%.
 
-### Refreshing the snapshot and the fixture
+### Refreshing the snapshot
 
 ```bash
 railway run --service backend-ingest -- python -m yasli.seed freeze --dry-run
@@ -51,16 +47,9 @@ railway run --service backend-ingest -- python -m yasli.seed freeze
 just db-reset && just be-seed   # confirm the row counts are unchanged
 ```
 
-This is the one command in the seed path that needs credentials: R2 for
-the snapshot, and read access to production for the fixture. `railway run
---service backend-ingest` supplies the `R2_*` variables but its
-`DATABASE_URL` points at `postgres.railway.internal`, which does not
-resolve from a laptop — pass the Postgres service's `DATABASE_PUBLIC_URL`
-instead.
-
-The two files are published as a pair, with guards against the failure
-that actually costs data (a fixture row overwriting a live one). The full
-flag list and the reasoning are in
+This is the one command in the seed path that needs credentials: R2, for
+the snapshot. It refreshes the snapshot only and does not touch the
+database. The flag list and the reasoning are in
 [`data/seed/README.md`](../data/seed/README.md).
 
 ---
