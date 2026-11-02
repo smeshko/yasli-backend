@@ -114,8 +114,8 @@ def main(argv: list[str] | None = None) -> int:
         description=(
             "Bring a local Postgres to a production-like state from the "
             "committed data under data/ — migrations, ГРАО districts, the "
-            "frozen snapshot, the legacy institutions and the institution "
-            "locations. No R2 credential required."
+            "frozen snapshot and the institution locations. "
+            "No R2 credential required."
         ),
     )
     subparsers = parser.add_subparsers(dest="cmd")
