@@ -3,8 +3,7 @@
 A developer with a clone of this repo and an empty Postgres runs the seed
 and ends up with a database that answers the same questions production
 answers, without holding a single R2 credential. The data it loads is
-committed: ``data/grao/kads-03-06.zip``, ``data/seed/snapshot.json.gz``,
-``data/seed/legacy_institutions.json`` and
+committed: ``data/grao/kads-03-06.zip``, ``data/seed/snapshot.json.gz`` and
 ``data/institution_locations.csv``.
 
 The orchestration lives in :mod:`yasli.seed.runner`; the CLI in

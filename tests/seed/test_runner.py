@@ -33,7 +33,6 @@ def test_build_steps_is_the_documented_order() -> None:
         "migrate",
         "grao",
         "ingest",
-        "legacy-institutions",
         "institution-locations",
         "restamp-districts",
     ]

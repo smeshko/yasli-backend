@@ -160,6 +160,14 @@ tables and recreates `address_entries` empty.
 `institutions.has_infant_group`. This backend deploy is v2-only: v1
 snapshots are rejected before any database writes.
 
+**Legacy nursery retirement: revision `0011`.** Running `alembic upgrade
+head` advances the DB from `0010` to `0011`, a data-only migration that
+deletes the 18 stale `nursery/<kindergarten id>` rows (`ДГ№X … / с яслена
+група/`, external ids 39–83) together with their `institution_locations`
+rows and catchment edges. Its downgrade is a no-op: the rows are not
+restored. After the deploy `GET /api/institutions` returns 77, and YAS-40
+then regenerates the frontend's institutions manifest.
+
 Two ways to run it on Railway:
 
 1. **One-off run command (recommended for this change).** From the

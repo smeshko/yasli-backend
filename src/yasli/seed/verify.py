@@ -13,10 +13,9 @@ snapshot left behind, changes what ``/api/match`` answers.
 So the two drifting tables — ``institutions`` and ``address_institutions``
 — are reconciled against the committed artifacts by **set equality**:
 missing rows and extra rows both fail, each named. Every count is derived
-from ``data/seed/snapshot.json.gz`` and
-``data/seed/legacy_institutions.json``, never hard-coded. 95 is today's
-arithmetic (77 + 18), not a constant — ``freeze`` legitimately rewrites
-both artifacts, and a literal would turn a refresh into a failure.
+from ``data/seed/snapshot.json.gz`` alone, never hard-coded: ``freeze``
+legitimately rewrites it, and a literal would turn a refresh into a
+failure.
 
 Checks collect rather than short-circuit: a database that has never been
 seeded should report everything that is wrong with it in one pass, and
@@ -35,7 +34,6 @@ from typing import Any
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
-from yasli.ingest import legacy_institutions_loader as legacy_loader
 from yasli.ingest.match_data_validation import validate_match_data
 from yasli.ingest.pipeline import DEFAULT_SNAPSHOT
 from yasli.models import Address, Institution, Street, address_institutions
@@ -103,13 +101,11 @@ class Artifacts:
     """The committed files verification measures the database against."""
 
     snapshot: dict[str, Any]
-    legacy: list[dict[str, Any]]
 
     @classmethod
     def load(cls) -> Artifacts:
         snapshot = json.loads(gzip.decompress(DEFAULT_SNAPSHOT.read_bytes()))
-        legacy = legacy_loader.parse_file(legacy_loader.DEFAULT_PATH)
-        return cls(snapshot=snapshot, legacy=legacy)
+        return cls(snapshot=snapshot)
 
     @property
     def scraped_at(self) -> datetime | None:
@@ -122,29 +118,6 @@ class Artifacts:
     def snapshot_keys(self) -> set[tuple[str, str]]:
         return {
             (i["kind"], str(i["external_id"])) for i in self.snapshot["institutions"]
-        }
-
-    @property
-    def legacy_keys(self) -> set[tuple[str, str]]:
-        return {(r["kind"], r["external_id"]) for r in self.legacy}
-
-    @property
-    def expected_institution_keys(self) -> set[tuple[str, str]]:
-        """The disjoint union the seed is supposed to produce."""
-        return self.snapshot_keys | self.legacy_keys
-
-    @property
-    def legacy_without_district(self) -> set[tuple[str, str]]:
-        """Fixture rows that deliberately carry no район.
-
-        Production holds no район for any of these, so neither does the
-        fixture; they are the expected, non-defective population of
-        `validate-match-data`'s `nursery_without_district` counter.
-        """
-        return {
-            (r["kind"], r["external_id"])
-            for r in self.legacy
-            if r["district_code"] is None
         }
 
 
@@ -172,8 +145,8 @@ def _one_line(exc: BaseException) -> str:
 
 
 def check_institution_set(session: Session, artifacts: Artifacts) -> CheckResult:
-    """Institutions must be exactly the artifacts' union — no more, no less."""
-    expected = artifacts.expected_institution_keys
+    """Institutions must be exactly the snapshot's — no more, no less."""
+    expected = artifacts.snapshot_keys
     rows = session.execute(
         select(Institution.kind, Institution.external_id, Institution.district_code)
     ).all()
@@ -186,10 +159,7 @@ def check_institution_set(session: Session, artifacts: Artifacts) -> CheckResult
         return CheckResult(
             name="institution-set",
             ok=True,
-            detail=(
-                f"{len(actual)} institutions = snapshot {len(artifacts.snapshot_keys)} "
-                f"+ fixture {len(artifacts.legacy_keys)}"
-            ),
+            detail=f"{len(actual)} institutions = the snapshot's {len(expected)}",
         )
 
     items = [f"missing {k}/{e}" for k, e in missing]
@@ -381,12 +351,12 @@ def check_address_districts(session: Session, artifacts: Artifacts) -> CheckResu
 def check_institution_districts(
     session: Session, artifacts: Artifacts
 ) -> CheckResult:
-    """Nurseries must carry a район — bar the fixture's deliberate nulls.
+    """Every nursery must carry a район.
 
     This is a check on the *seed data*, not on the stamping pass:
     `district_stamp` excludes `kind='nursery'` on purpose because nursery
-    districts are API-sourced, so a NULL here means the snapshot or the
-    fixture lacks the value and re-running `restamp-districts` would do
+    districts are API-sourced, so a NULL here means the snapshot lacks the
+    value and re-running `restamp-districts` would do
     nothing. Nurseries are the load-bearing case because
     `_district_rows_for_kind` is the *only* way one reaches `/api/match`.
 
@@ -396,28 +366,19 @@ def check_institution_districts(
     Varna city. Production carries the same handful, so failing on them
     would mean failing on parity with production.
     """
-    allowed = artifacts.legacy_without_district
     rows = session.execute(
         select(Institution.kind, Institution.external_id, Institution.name)
         .where(Institution.kind.in_(("nursery", "preschool")))
         .where(Institution.district_code.is_(None))
     ).all()
-    offenders = [
-        r
-        for r in rows
-        if r.kind == "nursery" and (r.kind, r.external_id) not in allowed
-    ]
+    offenders = [r for r in rows if r.kind == "nursery"]
     unstamped_preschools = [r for r in rows if r.kind == "preschool"]
 
     if not offenders:
-        detail = (
-            f"{len(allowed)} nurseries without a район, all of them the "
-            "fixture's known-null legacy rows"
-        )
         return CheckResult(
             name="institution-districts",
             ok=True,
-            detail=detail,
+            detail="every nursery carries a район",
             items=_truncate(
                 [
                     f"preschool/{r.external_id} {r.name} "
@@ -431,10 +392,9 @@ def check_institution_districts(
         name="institution-districts",
         ok=False,
         detail=(
-            f"{len(offenders)} nursery rows carry no район and are not the "
-            "fixture's known-null rows — the seed data lacks the value, and "
-            "restamp-districts cannot supply it for a nursery. These route "
-            "nowhere in /api/match"
+            f"{len(offenders)} nursery rows carry no район — the seed data "
+            "lacks the value, and restamp-districts cannot supply it for a "
+            "nursery. These route nowhere in /api/match"
         ),
         remedy="re-run the seed (ingest step), or refresh the artifacts",
         items=_truncate([f"{r.kind}/{r.external_id} {r.name}" for r in offenders]),
@@ -594,30 +554,18 @@ def check_routing_case(session: Session, artifacts: Artifacts) -> CheckResult:
 def check_match_data(session: Session, artifacts: Artifacts) -> CheckResult:
     """Reuse `validate-match-data` rather than reimplementing its queries.
 
-    Its `nursery_without_district` counter is expected to equal the number
-    of fixture rows that deliberately carry no район — production reports
-    the same population. Any *other* hard failure is a real defect.
+    Any hard failure is a real defect: a seeded database must be as clean
+    as production is after the legacy rows were retired.
     """
     result = validate_match_data(session)
-    expected_null_nurseries = len(artifacts.legacy_without_district)
-    failures = result.hard_failures
     problems = [
         f"{name}={value}"
-        for name, value in vars(failures).items()
+        for name, value in vars(result.hard_failures).items()
         if value
-        and not (
-            name == "nursery_without_district" and value == expected_null_nurseries
-        )
     ]
     if not problems:
         return CheckResult(
-            name="match-data-validation",
-            ok=True,
-            detail=(
-                "no unexpected hard failures "
-                f"(nursery_without_district={failures.nursery_without_district}, "
-                f"the fixture's {expected_null_nurseries} known-null legacy rows)"
-            ),
+            name="match-data-validation", ok=True, detail="no hard failures"
         )
     return CheckResult(
         name="match-data-validation",

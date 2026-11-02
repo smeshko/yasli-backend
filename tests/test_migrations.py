@@ -120,7 +120,7 @@ def test_round_trip_upgrade_downgrade_upgrade(fresh_db: str) -> None:
     up1 = _alembic(["upgrade", "head"], url)
     assert up1.returncode == 0, up1.stderr
     eng = _engine(url)
-    assert _current_revision(eng) == "0010"
+    assert _current_revision(eng) == "0011"
     tables = _table_names(eng)
     assert {
         "institutions",
@@ -145,6 +145,14 @@ def test_round_trip_upgrade_downgrade_upgrade(fresh_db: str) -> None:
             text("SELECT count(*) FROM settlements")
         ).scalar_one()
     assert settlement_count == 6
+    eng.dispose()
+
+    # 0011 → 0010 is a no-op: every table stays.
+    down_noop = _alembic(["downgrade", "-1"], url)
+    assert down_noop.returncode == 0, down_noop.stderr
+    eng = _engine(url)
+    assert _current_revision(eng) == "0010"
+    assert "institution_locations" in _table_names(eng)
     eng.dispose()
 
     # 0010 → 0009 drops exactly institution_locations; the contact columns stay.
@@ -187,7 +195,7 @@ def test_round_trip_upgrade_downgrade_upgrade(fresh_db: str) -> None:
     up2 = _alembic(["upgrade", "head"], url)
     assert up2.returncode == 0, up2.stderr
     eng = _engine(url)
-    assert _current_revision(eng) == "0010"
+    assert _current_revision(eng) == "0011"
     tables = _table_names(eng)
     assert {
         "institutions",
@@ -209,6 +217,94 @@ def test_round_trip_upgrade_downgrade_upgrade(fresh_db: str) -> None:
         row.code: (row.name, row.locality_type) for row in final_rows
     } == EXPECTED_SETTLEMENT_ROWS
     eng.dispose()
+
+
+def _insert_institution(
+    conn, kind: str, external_id: str, name: str, district: str | None
+) -> int:
+    return conn.execute(
+        text(
+            "INSERT INTO institutions (external_id, name, kind, source_url, "
+            "district_code, last_seen_at) VALUES (:e, :n, :k, 'x', :d, now()) "
+            "RETURNING id"
+        ),
+        {"e": external_id, "n": name, "k": kind, "d": district},
+    ).scalar_one()
+
+
+def test_0011_retires_only_the_legacy_infant_group_rows(fresh_db: str) -> None:
+    url = fresh_db
+    up = _alembic(["upgrade", "0010"], url)
+    assert up.returncode == 0, up.stderr
+
+    eng = _engine(url)
+    with eng.begin() as conn:
+        legacy_id = _insert_institution(
+            conn, "nursery", "39", 'ДГ№6 "Палечко"/ с яслена група/', None
+        )
+        _insert_institution(conn, "kindergarten", "39", 'ДГ№6 "Палечко"', "01")
+        _insert_institution(conn, "nursery", "1", "ДЯ №1 control", "01")
+        _insert_institution(conn, "nursery", "47", "ДЯ №47 (control)", "01")
+        conn.execute(
+            text(
+                "INSERT INTO institution_locations (kind, external_id, role, "
+                "label, address, precision, source, verification, verified_at) "
+                "VALUES ('nursery', '39', 'main', 'main', 'x', 'none', 'manual', "
+                "'human', '2026-01-01')"
+            )
+        )
+        street_id = conn.execute(
+            text(
+                "INSERT INTO streets (city, raw_name, street_part, search_norm) "
+                "VALUES ('ГР.ВАРНА', 'УЛ.ТЕСТ', 'ТЕСТ', 'тест') RETURNING id"
+            )
+        ).scalar_one()
+        address_id = conn.execute(
+            text(
+                "INSERT INTO addresses (street_id, number_int) "
+                "VALUES (:s, 1) RETURNING id"
+            ),
+            {"s": street_id},
+        ).scalar_one()
+        conn.execute(
+            text(
+                "INSERT INTO address_institutions (address_id, institution_id) "
+                "VALUES (:a, :i)"
+            ),
+            {"a": address_id, "i": legacy_id},
+        )
+    eng.dispose()
+
+    up = _alembic(["upgrade", "head"], url)
+    assert up.returncode == 0, up.stderr
+
+    def survivors() -> set[tuple[str, str]]:
+        e = _engine(url)
+        with e.connect() as conn:
+            rows = conn.execute(
+                text("SELECT kind, external_id FROM institutions")
+            ).all()
+            locs = conn.execute(
+                text("SELECT count(*) FROM institution_locations")
+            ).scalar_one()
+            edges = conn.execute(
+                text("SELECT count(*) FROM address_institutions")
+            ).scalar_one()
+        e.dispose()
+        assert locs == 0
+        assert edges == 0
+        return {(r.kind, r.external_id) for r in rows}
+
+    expected = {("kindergarten", "39"), ("nursery", "1"), ("nursery", "47")}
+    assert survivors() == expected
+
+    down = _alembic(["downgrade", "-1"], url)
+    assert down.returncode == 0, down.stderr
+    assert survivors() == expected
+
+    again = _alembic(["upgrade", "head"], url)
+    assert again.returncode == 0, again.stderr
+    assert survivors() == expected
 
 
 def test_settlements_table_columns_constraints_and_defaults(fresh_db: str) -> None:

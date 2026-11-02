@@ -37,7 +37,6 @@ def test_seed_runs_every_step(summary: runner.SeedSummary) -> None:
         "migrate",
         "grao",
         "ingest",
-        "legacy-institutions",
         "institution-locations",
         "restamp-districts",
     ]
@@ -47,8 +46,31 @@ def test_seed_reports_the_snapshot_timestamp(summary: runner.SeedSummary) -> Non
     assert summary.scraped_at is not None
 
 
-def test_institutions_reach_95(engine: Engine) -> None:
-    assert _count(engine, "institutions") == 95
+def test_institutions_match_the_snapshot(engine: Engine) -> None:
+    assert _count(engine, "institutions") == 77
+
+
+def test_no_legacy_infant_group_nursery_survives(engine: Engine) -> None:
+    with engine.connect() as conn:
+        survivors = conn.execute(
+            text(
+                "SELECT count(*) FROM institutions "
+                "WHERE kind = 'nursery' AND name LIKE 'ДГ%'"
+            )
+        ).scalar_one()
+    assert survivors == 0
+
+
+def test_every_institution_has_a_main_location(engine: Engine) -> None:
+    with engine.connect() as conn:
+        without_main = conn.execute(
+            text(
+                "SELECT count(*) FROM institutions i WHERE NOT EXISTS ("
+                "SELECT 1 FROM institution_locations il WHERE il.kind = i.kind "
+                "AND il.external_id = i.external_id AND il.role = 'main')"
+            )
+        ).scalar_one()
+    assert without_main == 0
 
 
 def test_streets_and_addresses_match_the_snapshot(engine: Engine) -> None:
@@ -112,4 +134,4 @@ def test_seed_is_rerunnable_over_a_seeded_database(
     assert [s.name for s in second.steps] == [
         s.name for s in runner.build_steps()
     ]
-    assert _count(engine, "institutions") == 95
+    assert _count(engine, "institutions") == 77

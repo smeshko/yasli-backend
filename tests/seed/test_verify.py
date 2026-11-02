@@ -16,6 +16,7 @@ import pytest
 from sqlalchemy import Engine, delete, insert, select, text
 from sqlalchemy.orm import Session
 
+from yasli.ingest.match_data_validation import validate_match_data
 from yasli.models import Address, Institution, address_institutions
 from yasli.seed import verify
 
@@ -96,32 +97,49 @@ def test_a_missing_institution_fails_and_is_named(
     session: Session, artifacts: verify.Artifacts
 ) -> None:
     session.execute(
+        text(
+            "DELETE FROM institution_locations "
+            "WHERE kind = 'kindergarten' AND external_id = '39'"
+        )
+    )
+    session.execute(
         delete(Institution).where(
-            Institution.kind == "nursery", Institution.external_id == "39"
+            Institution.kind == "kindergarten", Institution.external_id == "39"
         )
     )
     session.flush()
 
     check = verify.check_institution_set(session, artifacts)
     assert not check.ok
-    assert any("missing nursery/39" in item for item in check.items)
+    assert any("missing kindergarten/39" in item for item in check.items)
 
 
-def test_the_expectation_tracks_the_committed_fixture(
+def test_a_nursery_without_a_district_fails(
     session: Session, artifacts: verify.Artifacts
 ) -> None:
-    """One fixture row fewer shifts the expectation, with no code change."""
-    trimmed = verify.Artifacts(
-        snapshot=artifacts.snapshot, legacy=artifacts.legacy[:-1]
+    session.execute(
+        text(
+            "UPDATE institutions SET district_code = NULL "
+            "WHERE kind = 'nursery' AND external_id = '1'"
+        )
     )
-    assert len(trimmed.expected_institution_keys) == (
-        len(artifacts.expected_institution_keys) - 1
-    )
-    # The database still holds the row the trimmed fixture no longer claims,
-    # so it is now an extra rather than a silent pass.
-    check = verify.check_institution_set(session, trimmed)
-    assert not check.ok
-    assert check.items
+    session.flush()
+
+    districts = verify.check_institution_districts(session, artifacts)
+    assert not districts.ok
+    assert any("nursery/1 " in item for item in districts.items)
+
+    match_data = verify.check_match_data(session, artifacts)
+    assert not match_data.ok
+    assert "nursery_without_district=1" in match_data.items
+
+
+def test_match_data_validation_reports_no_hard_failures(
+    session: Session, artifacts: verify.Artifacts
+) -> None:
+    check = verify.check_match_data(session, artifacts)
+    assert check.ok, check.items
+    assert not validate_match_data(session).has_hard_failures
 
 
 # --- catchment edges -------------------------------------------------------
@@ -282,7 +300,7 @@ def test_a_stale_snapshot_warns_without_failing(
     stale["scraped_at"] = (
         datetime.now(UTC) - timedelta(days=120)
     ).strftime("%Y-%m-%dT%H:%M:%SZ")
-    aged = verify.Artifacts(snapshot=stale, legacy=artifacts.legacy)
+    aged = verify.Artifacts(snapshot=stale)
 
     check = verify.check_snapshot_freshness(session, aged)
     assert check.warning

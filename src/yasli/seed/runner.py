@@ -12,7 +12,7 @@ The closing ``restamp-districts`` runs the *non-gated* passes, re-deriving
 every kindergarten and preschool district against the full ГРАО table. On
 a clean seed it is close to a no-op — ingest's gated passes already left
 nothing NULL. It earns its place on a re-seed, where a previous ГРАО cycle
-may have stamped a район differently. It does **not** stamp the legacy
+may have stamped a район differently. It does **not** stamp
 nurseries: both passes exclude ``kind='nursery'`` because nursery
 districts are API-sourced.
 
@@ -39,7 +39,6 @@ from sqlalchemy.orm import Session
 
 from yasli.db import get_engine
 from yasli.ingest import grao_loader, institution_locations_loader, pipeline
-from yasli.ingest import legacy_institutions_loader as legacy_loader
 from yasli.ingest.__main__ import restamp_districts_in_session
 from yasli.ingest.municipality import REPO_ROOT
 
@@ -57,7 +56,6 @@ _EXIT_CODES: tuple[tuple[type[BaseException], int], ...] = (
     (grao_loader.ArchiveError, EXIT_DATA),
     (pipeline.SnapshotFileError, EXIT_DATA),
     (pipeline.UnsupportedSnapshotVersion, EXIT_DATA),
-    (legacy_loader.LegacyFixtureError, EXIT_DATA),
     (institution_locations_loader.LocationRowError, EXIT_DATA),
     (ValidationError, EXIT_DATA),
     (json.JSONDecodeError, EXIT_DATA),
@@ -159,16 +157,6 @@ def _step_ingest(ctx: SeedContext) -> str:
     )
 
 
-def _step_legacy_institutions(ctx: SeedContext) -> str:
-    rows = legacy_loader.parse_file(legacy_loader.DEFAULT_PATH)
-    with Session(get_engine()) as session, session.begin():
-        summary = legacy_loader.load_rows(rows, session)
-    return (
-        f"inserted={summary.inserted} updated={summary.updated} "
-        f"unchanged={summary.unchanged}"
-    )
-
-
 def _step_institution_locations(ctx: SeedContext) -> str:
     """Loads with ``--allow-incomplete``: the committed CSV can lag the
     snapshot's institutions, and this is a local seed. What the flag lets
@@ -204,7 +192,6 @@ def build_steps() -> list[Step]:
         Step(name="migrate", run=_step_migrate),
         Step(name="grao", run=_step_grao),
         Step(name="ingest", run=_step_ingest),
-        Step(name="legacy-institutions", run=_step_legacy_institutions),
         Step(name="institution-locations", run=_step_institution_locations),
         Step(name="restamp-districts", run=_step_restamp_districts),
     ]
@@ -250,6 +237,5 @@ def default_paths() -> dict[str, Path]:
     return {
         "grao": grao_loader.DEFAULT_ARCHIVE,
         "snapshot": pipeline.DEFAULT_SNAPSHOT,
-        "legacy_institutions": legacy_loader.DEFAULT_PATH,
         "institution_locations": institution_locations_loader.DEFAULT_CSV,
     }
