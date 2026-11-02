@@ -54,10 +54,9 @@ def _run_verify_subcommand() -> int:
 def _run_freeze_subcommand(args: argparse.Namespace) -> int:
     """Regenerate the committed snapshot. Needs R2 credentials; see freeze.py."""
     try:
-        Settings()
         # Same message `python -m yasli.ingest` already produces.
         r2.validate_env()
-    except (ValueError, r2.R2ConfigError) as exc:
+    except r2.R2ConfigError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return runner.EXIT_CONFIG
 

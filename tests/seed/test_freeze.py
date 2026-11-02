@@ -145,3 +145,24 @@ def test_the_legacy_only_flag_is_rejected(
     with pytest.raises(SystemExit) as exc:
         main(["freeze", "--legacy-only"])
     assert exc.value.code == 2
+
+
+def test_freeze_runs_without_a_database_url(
+    snapshot: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Freeze never reads the database, so it must not demand DATABASE_URL."""
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setattr(freeze.r2, "load_dotenv", lambda *args, **kwargs: None)
+    for name in freeze.r2._REQUIRED_VARS:
+        monkeypatch.setenv(name, "test")
+    monkeypatch.setattr(
+        freeze, "fetch_snapshot", lambda client=None: _snapshot_payload(SNAPSHOT_KEYS)
+    )
+    run_freeze = freeze.run_freeze
+    monkeypatch.setattr(
+        freeze,
+        "run_freeze",
+        lambda **kwargs: run_freeze(snapshot_path=snapshot, **kwargs),
+    )
+
+    assert main(["freeze", "--dry-run"]) == 0
